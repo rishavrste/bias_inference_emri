@@ -1,10 +1,10 @@
 [project]
-name = "bias-inference"
+name = "bias-inference-emri"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.3",
-    "scipy>=1.17.1",
+    "fastlisaresponse (>=1.1.17,<2.0.0)",
 ]

@@ -25,7 +25,7 @@ from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
 
 
-from config_paris import Config, ObjectiveTracker
+from src.config_paris import Config, ObjectiveTracker
 from misc import _is_pos_def, check_and_clip_prior, _clip_physical_params_intrinsic,compute_fft_with_windowing, calculate_optimal_snr_0pa_vs_1pa, compute_fisher_parallelotope,covariance_from_fisher_parallelotope
 
 # -----------------------------
@@ -259,7 +259,7 @@ def prepare_true_waveform(signal_row: np.ndarray, add_kwargs: dict, use_gpu: boo
         'snr': snr,
     }
 
-# this need a lot of work to be implemented, and is not the main focus of this PR, so we can leave it as a placeholder for now
+# this need a lot of work to be implemented
 def objective_factory(target_func: str,
                       ctx: dict,
                       phase_max: bool = False,

@@ -278,3 +278,5 @@ def calculate_optimal_snr_0pa_vs_1pa():
 def load_startingpoint_param_array():
     pass
 
+def generate_colored_noise(PSD,delta_f,delta_t):
+    pass
