@@ -40,8 +40,69 @@ class Config:
         self.parameter_selected = "intrinsic" #or "extrinsic"
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
 
+    def get_default_config(**kwargs):
+        """
+        Get default configuration with optional overrides.
+        Parameters
+        ----------
+        **kwargs : dict
+            Configuration parameters to override
+        Returns
+        -------
+        Config
+            Configuration object
 
+        Examples
+        --------
+        >>> cfg = get_default_config()
+        >>> cfg = get_default_config(use_gpu=True, n_walkers=100)
+        """
+        return Config(**kwargs)
 
+    def print_summary(self):
+        """Print a summary of current configuration."""
+
+        print("CONFIGURATION DETAILS")
+
+        print("\n--- Parameters ---")
+        for i, (name, value) in enumerate(zip(self.params_name, self.params)):
+            print(f"  [{i:02d}] {name:12s} : {value:.6e}")
+
+        print("\n--- Inference Parameters ---")
+        for p in self.param_names_to_infer:
+            print(f"  - {p}")
+
+        print("\n--- Computation ---")
+        print(f"  dt                : {self.dt}")
+        print(f"  T                 : {self.T}")
+        print(f"  TARGET_SNR        : {self._TARGET_SNR}")
+
+        print("\n--- Optimizer ---")
+        print(f"  optimizer         : {self.optimizer}")
+        print(f"  target_func       : {self.target_func}")
+        print(f"  nm_xatol          : {self.nm_xatol}")
+        print(f"  nm_fatol          : {self.nm_fatol}")
+
+        print("\n--- PARIS Settings ---")
+        print(f"  spread_scale      : {self.spread_scale}")
+        print(f"  sigma_range       : {self.sigma_range}")
+        print(f"  using_evec        : {self.using_evec}")
+        print(f"  seed_cloud        : {self.seed_cloud}")
+
+        print("\n--- Run Setup ---")
+        print(f"  grid_index        : {self.grid_index}")
+        print(f"  startingpoints    : {self.startingpoints}")
+        print(f"  parameter_selected: {self.parameter_selected}")
+        print(f"  run_type          : {self.run_type}")
+
+        print("\n--- Diagnostics ---")
+        print(f"  chi2              : {self.chi2}")
+        print(f"  dev_1             : {self.dev_1}")
+        print(f"  dev_2             : {self.dev_2}")
+
+    if __name__ == "__main__":
+        cfg = get_default_config()
+        cfg.print_summary()
 
 
 class ObjectiveTracker:
