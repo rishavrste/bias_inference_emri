@@ -13,7 +13,7 @@ class Config:
         self._TARGET_SNR = 20.0
         self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS',  'Phi_phi0',  'Phi_r0']
         self.sigma_range = 20.0
-        self.params = np.array([1e6,1e3,0.9, 16,  5.00000000e-01,  1.00000000e+00,
+        self.params = np.array([1e6,1e1,0.9, 16,  5.00000000e-01,  1.00000000e+00,
           3.31765439e+01,  1.04719755e+00,  7.85398163e-01, 6.28318531e-01,  5.23598776e-01,  1.00000000e-01,
          2.00000000e-01,  3.00000000e-01])
         
@@ -21,7 +21,7 @@ class Config:
                          "Phi_phi0","Phi_theta0","Phi_r0"]
         
         self.dt = 10  #Time step for waveform generation; default 0.1s
-        self.T= 1
+        self.T= 0.2
         self.chi2 = 0.0
         self.dev_1 = 0.0
         self.dev_2 = 0.0

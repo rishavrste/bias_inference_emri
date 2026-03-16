@@ -3,8 +3,23 @@ name = "bias-inference-emri"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 dependencies = [
-    "numpy>=2.4.3",
-    "fastlisaresponse (>=1.1.17,<2.0.0)",
+    "astropy>=6.0.1",
+    "corner>=2.2.3",
+    "cupy>=13.6.0",
+    "emd-signal>=1.9.0",
+    "eryn>=1.2.3",
+    "fastlisaresponse>=1.1.9",
+    "ipython>=8.18.1",
+    "jupyter>=1.1.1",
+    "lisaanalysistools>=1.1.8",
+    "pyemd>=1.1.0",
+    "scipy>=1.13.1",
+    "seaborn>=0.13.2",
+    "typing>=3.10.0.0",
 ]
+
+[tool.uv]
+dev-dependencies = []
+package = false

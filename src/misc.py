@@ -3,7 +3,7 @@ import json
 import time
 import argparse
 from typing import Tuple, Optional
-
+from scipy.signal.windows import tukey
 import numpy as np
 
 # FEW / waveform & noise
@@ -269,8 +269,20 @@ def covariance_from_fisher_parallelotope(Q: np.ndarray, b: np.ndarray, prior_sig
 
 
 
-def compute_fft_with_windowing():
-    pass
+def compute_fft_with_windowing(waveform, dt, N,use_gpu=False,n_channels=3):
+    if use_gpu:
+        try:
+            xp = cp
+        except ImportError:
+            print("[WARN] CuPy not available, falling back to NumPy")
+            xp = np
+    else:
+        xp = np
+
+    window = xp.asarray(tukey(N, 0.01))
+    waveform_windowed = waveform * window
+    waveform_f = xp.asarray([xp.fft.rfft(waveform_windowed[i]) * dt for i in range(n_channels)])
+    return waveform_f
 
 def calculate_optimal_snr_0pa_vs_1pa():
     pass
