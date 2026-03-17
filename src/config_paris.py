@@ -5,15 +5,16 @@ import warnings
 import traceback
 
 
+
 class Config:
 
     def __init__(self, **kwargs):
     
         # Target SNR for Fisher scaling
         self._TARGET_SNR = 20.0
-        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS',  'Phi_phi0',  'Phi_r0']
+        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']
 
-        self.sigma_range = 20.0
+        self.sigma_range = 400.0
         self.params = np.array([1e6,1e3,0.9, 16,  5.00000000e-01,  1.00000000e+00,
           3.31765439e+01,  1.04719755e+00,  7.85398163e-01, 6.28318531e-01,  5.23598776e-01,  1.00000000e-01,
          2.00000000e-01,  3.00000000e-01])
@@ -43,6 +44,7 @@ class Config:
         self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
 
         self.basedir = "/scratch/e1583490/try"
+        self.prior_sigma_range = 50.0  #Default range for uniform prior in PARIS (±20% of center)
         
 
     def get_default_config(**kwargs):

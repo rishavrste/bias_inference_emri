@@ -12,6 +12,12 @@ from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
 from stableemrifisher.utils import generate_PSD, inner_product
 
+from fastlisaresponse import ResponseWrapper
+from lisatools.detector import EqualArmlengthOrbits
+from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
+from few.waveform import GenerateEMRIWaveform
+from few.waveform.waveform import SuperKludgeWaveform
+
 def _is_pos_def(mat: np.ndarray) -> bool:
     """Return True if matrix is positive-definite via Cholesky test."""
     try:
@@ -112,12 +118,11 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
             x[:, 4] = np.clip(x[:, 4], 1e-8, 1 - 1e-8)
         return x
     
-
-def compute_fisher_parallelotope(build_waveform_response,
-                                 ctx: dict,
+def compute_fisher_parallelotope(ctx: dict,
                                  fisher_params: list,
                                  params_to_infer: list,
                                  additional_kwargs: dict,
+                                 build_waveform_response = None,
                                  use_gpu: bool = True,
                                  _TARGET_SNR: float = 20.0,
                                  prior_sigma_range: float = 20,
@@ -141,41 +146,65 @@ def compute_fisher_parallelotope(build_waveform_response,
 
     channels = [A1TDISens, E1TDISens, T1TDISens]
     noise_kwargs = [{"sens_fn": ch} for ch in channels]
-
-    # Parameter names and flags (use 5D derivatives as in old_method; chi2 fixed via add_param_args when 1PA)
     param_names = params_to_infer
-
-    add_param_args =  additional_kwargs
-    sef_kwargs = {
-        'EMRI_waveform_gen': waveform_response,
-        'param_names': param_names,
-        'der_order': 6,
-        'Ndelta': 12,
-        'use_gpu': bool(use_gpu),
-        'noise_model': get_sensitivity,
-        'channels': channels,
-        'noise_kwargs': noise_kwargs,
-        'add_param_args': add_param_args,
-        'deltas': None,
-    }
-    # Fisher parameter vector (only 5 core dims positionally)
     fisher_params = fisher_params
 
-    # Initialize SEF and compute Fisher
+    sef = StableEMRIFisher(waveform_class=SuperKludgeWaveform,
+                       waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=False, odd_len=True)),
+                       waveform_generator = GenerateEMRIWaveform,
+                       waveform_generator_kwargs= dict(return_list=False),
+                       ResponseWrapper=ResponseWrapper,
+                       ResponseWrapper_kwargs = dict(Tobs=ctx['T'],
+                                                    t0=10000.0,
+                                                    dt=ctx['dt'],
+                                                    index_lambda=8,
+                                                    index_beta=7,
+                                                    flip_hx=True,
+                                                    is_ecliptic_latitude=False,
+                                                    remove_garbage="zero",
+                                                    orbits=EqualArmlengthOrbits(use_gpu=use_gpu),
+                                                    force_backend = "cuda12x" if use_gpu else "cpu",
+                                                    order=20,
+                                                    tdi="2nd generation",
+                                                    tdi_chan="AET"),
+                       stats_for_nerds = True, use_gpu = use_gpu,
+                       deriv_type='stable',
+                       noise_model=get_sensitivity,
+                       noise_kwargs=noise_kwargs,
+                       channels=channels,
+                       T = ctx['T'], dt = ctx['dt'],
+                       stability_plot = False,
+                       der_order = 6, Ndelta = 12,
+                       plunge_check=True, return_derivatives=False
+                       )
+    emri_kwargs = {"T":ctx['T'], "dt":ctx['dt']}
+ 
+    pars_list_com = list(fisher_params) + [ctx['chi2'],additional_kwargs['evolve_1PA'],additional_kwargs['evolve_primary'],
+     additional_kwargs['evolve_2PA'],additional_kwargs['deviation_included'],additional_kwargs['dev_1'],additional_kwargs['dev_2']]
+    SNR = sef.SNRcalc_SEF(*pars_list_com,**emri_kwargs,use_gpu=use_gpu)
+    print("SNR: ", SNR)
+    param_dict = {
+    'm1': fisher_params[0],
+    'm2': fisher_params[1],
+    'a': fisher_params[2],
+    'p0': fisher_params[3],
+    'e0': fisher_params[4],
+    'xI0': fisher_params[5],
+    'dist': fisher_params[6],
+    'qS': fisher_params[7],
+    'phiS': fisher_params[8],
+    'qK': fisher_params[9],
+    'phiK': fisher_params[10],
+    'Phi_phi0': fisher_params[11],
+    'Phi_theta0': fisher_params[12],
+    'Phi_r0': fisher_params[13]}
+
+    Fisher = sef(wave_params = param_dict,param_names=param_names, add_param_args=additional_kwargs,
+            live_dangerously = False, stability_plot = True,der_order = 6, Ndelta = 12,
+            )
+                   
     try:
-        # Follow old_method.py style: pass T, dt as keyword args
-        sef = StableEMRIFisher(*fisher_params, T=float(ctx['T']), dt=float(ctx['dt']), **sef_kwargs)
-    except Exception as e:
-        raise RuntimeError(
-            f"StableEMRIFisher init failed with kwargs T,dt: {e} | "
-            f"len(fisher_params)={len(fisher_params)}, param_names={param_names}"
-        )
-    try:
-        # Initialize internal PSD/noise and window via SEF API
-        sef.SNRcalc_SEF()
-        if not hasattr(sef, 'deltas') or sef.deltas is None:
-            sef.Fisher_Stability()
-        F = np.asarray(sef.FisherCalc(), dtype=float)
+        F = np.asarray(Fisher, dtype=float)
         print(f"[FISHER] {repr(F)}")
         print(f"[FISHER_IS_PD] {_is_pos_def(F)}")
         F_inv = np.linalg.inv(F)
@@ -188,7 +217,8 @@ def compute_fisher_parallelotope(build_waveform_response,
 
     emri_flags = {"T": ctx['T'], "dt": ctx['dt'], '1PA': False, 'evolve_primary': False, '2PA': False}
 
-    waveform_tmpl = waveform_response(*fisher_params, **emri_flags)
+    waveform_tmpl = sef.waveform
+    
     PSD_funcs = generate_PSD(waveform=waveform_tmpl, dt=float(ctx['dt']), noise_PSD=get_sensitivity,
                              channels=channels, noise_kwargs=noise_kwargs, use_gpu=bool(use_gpu))
     snr_model = float(np.sqrt(inner_product(waveform_tmpl, waveform_tmpl, PSD_funcs, float(ctx['dt']), use_gpu=bool(use_gpu))))
@@ -283,31 +313,6 @@ def compute_fft_with_windowing(waveform, dt, N,use_gpu=False,n_channels=3):
     waveform_f = xp.asarray([xp.fft.rfft(waveform_windowed[i]) * dt for i in range(n_channels)])[:,1:]
     return waveform_f
 
-def inner_prod(signal_1_f, signal_2_f, PSD, delta_f, xp=np):
-    """
-    Compute noise-weighted inner product using BBHx's standard normalization.
-
-    Uses: ⟨a|b⟩ = 4·Δf·Re[Σ a(f)·b*(f) / Sn(f)]
-
-    Parameters
-    ----------
-    signal_1_f : array-like
-        First signal in frequency domain
-    signal_2_f : array-like
-        Second signal in frequency domain
-    PSD : array-like
-        Power spectral density Sn(f)
-    delta_f : float
-        Frequency spacing (Hz)
-    xp : module, optional
-        Array module (numpy or cupy). Default: numpy
-
-    Returns
-    -------
-    float
-        Inner product value ⟨signal_1|signal_2⟩
-    """
-    return 4 * delta_f * xp.real(xp.sum(signal_1_f * signal_2_f.conj() / PSD))
 
 def inner_prod(signal_1_f, signal_2_f, PSD, delta_f, xp=np):
     """
@@ -361,6 +366,7 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
                     maximize_phase=False,
                     **fixed):
     xp = cp if fixed['use_gpu'] else np
+    signal = fixed['waveform_true_fft']
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
@@ -371,14 +377,22 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     h = xp.array(waveform_response(*wave_params, **emri_kwargs))
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
-    optimal_snr = xp.sqrt(inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp))
+    optimal_snr = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
+    optimal_snr_x = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
+    denom = xp.sqrt(optimal_snr * optimal_snr_x)
 
 
     if (maximize_phase):
-        num = inner_prod_without_phase(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
+        num = inner_prod_without_phase(signal, h_f, PSD, fixed['delta_f'], xp=cp)
     else:  
-        num = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
-    snr = num / optimal_snr
+        num = inner_prod(signal, h_f, PSD, fixed['delta_f'], xp=cp)
+    
+    snr = num / denom
+
+    if(xp.isnan(snr) or xp.isinf(snr)):
+        print(f"[WARN] SNR computation returned {snr}; setting to 0")
+        return -np.inf
+    # print(snr)
     return float(snr)
 
 def load_startingpoint_param_array():
