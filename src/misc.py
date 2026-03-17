@@ -280,7 +280,7 @@ def compute_fft_with_windowing(waveform, dt, N,use_gpu=False,n_channels=3):
 
     window = xp.asarray(tukey(N, 0.01))
     waveform_windowed = waveform * window
-    waveform_f = xp.asarray([xp.fft.rfft(waveform_windowed[i]) * dt for i in range(n_channels)])
+    waveform_f = xp.asarray([xp.fft.rfft(waveform_windowed[i]) * dt for i in range(n_channels)])[:,1:]
     return waveform_f
 
 def inner_prod(signal_1_f, signal_2_f, PSD, delta_f, xp=np):
@@ -368,16 +368,16 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
                'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
-    h = waveform_response(*wave_params, **emri_kwargs)
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
     PSD = fixed['PSD']
-    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N'], use_gpu=fixed['use_gpu'], n_channels=3)
-    optimal_snr = xp.sqrt(inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=np))
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+    optimal_snr = xp.sqrt(inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp))
 
 
     if (maximize_phase):
-        num = inner_prod_without_phase(h, h, PSD, fixed['dt'], window=None, fmin=None, fmax=None, use_gpu=fixed['use_gpu'])
-    else:
-        num = inner_prod(fixed['waveform_true_fft'], h_f, PSD, fixed['delta_f'], xp=np)
+        num = inner_prod_without_phase(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
+    else:  
+        num = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
     snr = num / optimal_snr
     return float(snr)
 

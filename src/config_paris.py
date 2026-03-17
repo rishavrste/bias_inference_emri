@@ -14,7 +14,7 @@ class Config:
         self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS',  'Phi_phi0',  'Phi_r0']
 
         self.sigma_range = 20.0
-        self.params = np.array([1e6,1e1,0.9, 16,  5.00000000e-01,  1.00000000e+00,
+        self.params = np.array([1e6,1e3,0.9, 16,  5.00000000e-01,  1.00000000e+00,
           3.31765439e+01,  1.04719755e+00,  7.85398163e-01, 6.28318531e-01,  5.23598776e-01,  1.00000000e-01,
          2.00000000e-01,  3.00000000e-01])
         
@@ -22,7 +22,7 @@ class Config:
                          "Phi_phi0","Phi_theta0","Phi_r0"]
         
         self.dt = 10  #Time step for waveform generation; default 0.1s
-        self.T= 0.5
+        self.T= 0.25
         self.chi2 = 0.0
         self.dev_1 = 0.0
         self.dev_2 = 0.0
@@ -35,14 +35,14 @@ class Config:
         self.nm_fatol = 1e-2  #Absolute function tolerance for Nelder-Mead; default 0.01
         self.target_func = 'optimal_snr_phase_max'  #Default target function for optimization
         self.optimizer = 'PARIS'  #Default optimizer
-        self.signal_param_array = np.array([])  #To be loaded from file or defined in code
+        # self.signal_param_array = np.array([])  #To be loaded from file or defined in code
         self.startingpoints = 'signal_parameter_array_IMRI.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
 
         self.parameter_selected = "intrinsic" #or "extrinsic"
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
         self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.basedir = "/scratch/svu/e1583490/bias_inference_emri"
+        self.basedir = "/scratch/e1583490/try"
         
 
     def get_default_config(**kwargs):
