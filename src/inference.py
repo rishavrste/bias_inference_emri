@@ -6,7 +6,7 @@ from typing import Tuple, Optional
 
 import numpy as np
 from scipy.optimize import minimize
-
+import cupy as cp
 #few and SEF imports
 from few.waveform import GenerateEMRIWaveform
 from few.waveform.waveform import SuperKludgeWaveform
@@ -23,10 +23,16 @@ from lisatools.detector import EqualArmlengthOrbits
 from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
+import matplotlib.pyplot as plt
 
-
-from src.config_paris import Config, ObjectiveTracker
-from misc import _is_pos_def, check_and_clip_prior, _clip_physical_params_intrinsic,compute_fft_with_windowing, calculate_optimal_snr_0pa_vs_1pa, compute_fisher_parallelotope,covariance_from_fisher_parallelotope
+from config_paris import Config, ObjectiveTracker
+from misc import _is_pos_def, check_and_clip_prior, _clip_physical_params_intrinsic,compute_fft_with_windowing, calculate_detection_snr_0pa_vs_1pa, inner_prod,\
+    compute_fisher_parallelotope,covariance_from_fisher_parallelotope,inner_prod,load_startingpoint_param_array
+try:
+    import cupy as cp
+    xp=cp
+except:
+    xp=np
 
 # -----------------------------
 # PARIS global context (picklable functions require module scope)
@@ -48,6 +54,12 @@ _PARIS_USE_ELLIPSE = True
 _TARGET_SNR = Config()._TARGET_SNR
 
 params_to_infer = Config().param_names_to_infer
+dt = Config().dt
+T = Config().T
+chi2 = Config().chi2
+dev_1 = Config().dev_1
+dev_2 = Config().dev_2
+
 
 def paris_prior_transform(u):
     """Prior transform using Fisher-parallelotope when configured.
@@ -165,7 +177,8 @@ def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> Respo
     """Create a LISA ResponseWrapper consistent with existing modules."""
 
     sum_kwargs = dict(pad_output=False, odd_len=True)
-    waveform_model = GenerateEMRIWaveform(SuperKludgeWaveform, sum_kwargs=sum_kwargs, return_list=False)
+    
+    waveform_model = GenerateEMRIWaveform(SuperKludgeWaveform, sum_kwargs=sum_kwargs, return_list=False,use_gpu=use_gpu)
 
     t0 = 10000.0
     tdi_gen = "2nd generation"
@@ -181,51 +194,53 @@ def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> Respo
         index_lambda=index_lambda,
         index_beta=index_beta,
         flip_hx=True,
-      #  use_gpu=use_gpu,
         is_ecliptic_latitude=False,
         remove_garbage="zero",
         orbits=EqualArmlengthOrbits(use_gpu=use_gpu),
+        force_backend = "cuda12x" if use_gpu else "cpu",
         order=order,
         tdi=tdi_gen,
         tdi_chan="AET",
     )
+
     print("[INFO] Finished loading modules and building ResponseWrapper")
     return response
 
-def prepare_true_waveform(signal_row: np.ndarray, add_kwargs: dict, use_gpu: bool = False):
+def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs: dict, use_gpu: bool = False):
     """
     Build fiducial 1PA waveform, PSD, and FFT from a signal parameter row.
-
     signal_row columns:
-      [m1, m2, a, p0, e0, Y0, dist, qS, phiS, qK, phiK, Phi_phi0, Phi_theta0, Phi_r0, dt, T, chi2]
+      [m1, m2, a, p0, e0, Y0, dist, qS, phiS, qK, phiK, Phi_phi0, Phi_theta0, Phi_r0]
     """
     (
         m1, m2, a, p0, e0, Y0,
         dist, qS, phiS, qK, phiK,
-        Phi_phi0, Phi_theta0, Phi_r0,
-        dt, T
+        Phi_phi0, Phi_theta0, Phi_r0
     ) = signal_row
 
-    waveform_response = build_waveform_response(T=T, dt=dt, use_gpu=use_gpu)
+    waveform_response = build_waveform_response(T=emri_kwargs['T'], dt=emri_kwargs['dt'], use_gpu=use_gpu)
 
     chi2 = add_kwargs.get('chi2')
     deviation_included = add_kwargs.get('deviation_included', True)
-    evolve_1PA = add_kwargs.get('evolve_1PA',)
+    #add_kwargs['evolve_1PA'] = True
+    evolve_1PA = add_kwargs['evolve_1PA']
     evolve_primary = add_kwargs.get('evolve_primary', False)
     evolve_2PA = add_kwargs.get('evolve_2PA',False)
-    dev_1 = add_kwargs.get('dev_a')
-    dev_2 = add_kwargs.get('dev_b')
+    dev_1 = add_kwargs.get('dev_1')
+    dev_2 = add_kwargs.get('dev_2')
+    dt = emri_kwargs['dt']
 
     wave_params = [
         m1, m2, a, p0, e0, Y0,
         dist, qS, phiS, qK, phiK,
         Phi_phi0, Phi_theta0, Phi_r0,chi2, evolve_1PA, evolve_primary, evolve_2PA, deviation_included, dev_1, dev_2
     ]
-    
-    emri_kwargs = {"T": T, "dt": dt, '1PA': evolve_1PA,'chi2': chi2, 'evolve_primary': evolve_primary,
-                    '2PA': evolve_2PA,'deviation_included': deviation_included,'dev_a': dev_1, 'dev_b': dev_2}
+    # emri_kwargs = {"T": T, "dt": dt, 'chi2': chi2, 'evolve_1PA': evolve_1PA, 'evolve_primary': evolve_primary,
+    #                 'evolve_2PA': evolve_2PA,'deviation_included': deviation_included,'dev_1': dev_1, 'dev_2': dev_2}
 
-    waveform_true = waveform_response(*wave_params, **emri_kwargs)
+    waveform_true = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    print("[INFO] Finished generating true waveform")
+    
 
     channels = [A1TDISens, E1TDISens, T1TDISens]
     noise_kwargs = [{"sens_fn": ch} for ch in channels]
@@ -239,12 +254,20 @@ def prepare_true_waveform(signal_row: np.ndarray, add_kwargs: dict, use_gpu: boo
     )
 
     # Verify SNR level (grid builder normalized dist to target PA2 SNR already)
-    snr = float(np.sqrt(inner_product(waveform_true, waveform_true, PSD_funcs, dt, use_gpu=use_gpu)))
-    print(f"[TRUE] SNR: {snr:.6f}")
+    PSD_funcs_ = xp.array(PSD_funcs)
 
-    waveform_true_fft = compute_fft_with_windowing(waveform_true, dt, use_gpu=use_gpu)
+    # print("type check - waveform_true:", type(waveform_true), "PSD_funcs:", type(PSD_funcs_), "dt:", type(dt))
+    print("shape check - waveform_true:", xp.shape(waveform_true), "PSD_funcs:", xp.shape(PSD_funcs_))
+    snr_2 = inner_product(waveform_true, waveform_true, PSD_funcs_, dt, use_gpu=use_gpu)
+    #if hasattribute get u
+    snr = np.sqrt(snr_2.get()) if hasattr(snr_2, "get") else np.sqrt(snr_2)
+    print(f"[TRUE] SNR: {snr:.6f}")
     N_fiducial = len(waveform_true[0])
+    
+    waveform_true_fft = compute_fft_with_windowing(waveform_true, dt, N_fiducial, use_gpu=use_gpu, n_channels=3)
+    
     print("[INFO] Finished preparing true waveform (GPU)")
+    freq=np.fft.rfftfreq(N_fiducial, dt)
 
     return {
         'm1': m1, 'm2': m2, 'a': a, 'p0': p0, 'e0': e0, 'Y0': Y0,
@@ -253,23 +276,23 @@ def prepare_true_waveform(signal_row: np.ndarray, add_kwargs: dict, use_gpu: boo
         'dt': dt, 'T': T, 'chi2': chi2,
         'dev_1': dev_1, 'dev_2': dev_2,
         'waveform_response': waveform_response,
-        'PSD_funcs': PSD_funcs,
+        'PSD_funcs': PSD_funcs_,
         'waveform_true_fft': waveform_true_fft,
         'N_fiducial': N_fiducial,
         'snr': snr,
+        'delta_f': freq[1]-freq[0],
+        'freq': freq
     }
 
-# this need a lot of work to be implemented
 def objective_factory(target_func: str,
                       ctx: dict,
                       phase_max: bool = False,
                       use_gpu_for_snr: bool = True,
                       infer_deviation_included: bool = False,
                       only_intrinsic_params: bool = False,
-                      add_args: dict = None) -> callable:
+                      add_kwargs: dict = None) -> callable:
     """
     Build a score(theta) where larger is better for all targets.
-
     - 'optimal_snr' and 'optimal_snr_phase_max': score = optimal SNR (maximize)
     - 'phase_match': score = -phase_diff_metric (maximize score => minimize phase diff)
     """
@@ -282,32 +305,56 @@ def objective_factory(target_func: str,
             'T': ctx['T'],
             'N_fiducial': ctx['N_fiducial'],
             'waveform_true_fft': ctx['waveform_true_fft'],
-            'xp': np,
+            'xp': np,'delta_f': ctx['delta_f'],
             'use_gpu': bool(use_gpu_for_snr),
         }
 
     def score_optimal_snr(theta: np.ndarray) -> float:
-   
-   
         if only_intrinsic_params == True:
-            m1, m2, a, p0, e0 = theta[:5]
-            val = calculate_optimal_snr_0pa_vs_1pa(
-                m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
-                ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_args,
-                maximize_phase=bool(phase_max),
-                **fixed,
-            )
+            if infer_deviation_included == False:
+                m1, m2, a, p0, e0 = theta
+                add_kwargs['evolve_1PA'] = False
+                val = calculate_detection_snr_0pa_vs_1pa(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+                    ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_kwargs,
+                    maximize_phase=bool(phase_max),
+                    **fixed,)
+                
+            else:
+                m1, m2, a, p0, e0, dev_1, dev_2 = theta
+                add_kwargs['evolve_1PA'] = False
+                add_kwargs['deviation_included'] = False
+                add_kwargs['dev_1'] = dev_1
+                add_kwargs['dev_2'] = dev_2
+                val = calculate_detection_snr_0pa_vs_1pa(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+                    ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_kwargs,
+                    maximize_phase=bool(phase_max),
+                    **fixed,)
+
         else:
             if infer_deviation_included:
-                m1, m2, a, p0, e0,qS,phiS,Phi_phi0,Phi_r0,dev_1,dev_2 = theta[:6]
-                add_args['dev_1'] = dev_1
-                add_args['dev_2'] = dev_2
-                val = calculate_optimal_snr_0pa_vs_1pa(
+                m1, m2, a, p0, e0,qS,phiS,Phi_phi0,Phi_r0,dev_1,dev_2 = theta
+                add_kwargs['dev_1'] = dev_1
+                add_kwargs['dev_2'] = dev_2
+                add_kwargs['evolve_1PA'] = False
+                add_kwargs['deviation_included'] = False
+                val = calculate_detection_snr_0pa_vs_1pa(
                     m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],qS,phiS, ctx['qK'], ctx['phiK'], 
-                    Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_args,
+                    Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,
                     maximize_phase=bool(phase_max),
                     **fixed)
-                print(val, 'param', repr(theta))
+               # print(val, 'param', repr(theta))
+                
+            else:
+                m1, m2, a, p0, e0,qS,phiS,Phi_phi0,Phi_r0 = theta
+                add_kwargs['evolve_1PA'] = False
+                val = calculate_detection_snr_0pa_vs_1pa(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],qS,phiS, ctx['qK'], ctx['phiK'], 
+                    Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,
+                    maximize_phase=bool(phase_max),
+                    **fixed)
+                #print(val, 'param', repr(theta))
         # Score is the SNR itself (maximize)
         return float(val)
 
@@ -326,10 +373,11 @@ def objective_factory(target_func: str,
     SK_traj_true = EMRIInspiralFull(func=SuperKludgeFlux)
 
     # do we need to implement it inside the function
-
+    add_kwargs["evolve_1PA"] = True
     traj_ref = SK_traj_true.get_inspiral(
         ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'], ctx['Y0'],
-        ctx['chi2'], True, False, False,False,False,0,0,Phi_phi0 = ctx['Phi_phi0'], Phi_theta0 = ctx['Phi_theta0'], Phi_r0 = ctx['Phi_r0'],
+        ctx['chi2'], add_kwargs["evolve_1PA"], add_kwargs['evolve_primary'], add_kwargs['evolve_2PA'],add_kwargs['deviation_included']
+        ,add_kwargs['dev_1'],add_kwargs['dev_2'],Phi_phi0 = ctx['Phi_phi0'], Phi_theta0 = ctx['Phi_theta0'], Phi_r0 = ctx['Phi_r0'],
         T=ctx['T'], dt=ctx['dt'], err=1e-11, DENSE_STEPPING=False,
         buffer_length=1000, integrate_backwards=False,
         max_step_size=None,
@@ -354,31 +402,27 @@ def objective_factory(target_func: str,
     def phase_metric_for_theta(theta: np.ndarray) -> float:
         # Supports both 0PA against 1PA reference
         if only_intrinsic_params == True:
-            m1, m2, a, p0, e0 = theta[:5]
-            add_args['evolve_1PA'] = False
-            use_1pa = False
-        else:
-            if infer_deviation_included:
-                m1, m2, a, p0, e0,qS,phiS,Phi_phi0,Phi_r0,dev_1,dev_2 = theta[:6]
-                add_args['dev_1'] = dev_1
-                add_args['dev_2'] = dev_2
-                add_args['deviation_included'] = True
-                add_args['evolve_1PA'] = False
-                use_1pa = False
+            if infer_deviation_included == False:
+                m1, m2, a, p0, e0 = theta
+                add_kwargs['deviation_included'] = False
+                add_kwargs['evolve_1PA'] = False
             else:
-                m1, m2, a, p0, e0,qS,phiS,Phi_phi0,Phi_r0 = theta[:6]
-                add_args['dev_1'] = dev_1
-                add_args['dev_2'] = dev_2
-                add_args['deviation_included'] = True
-                add_args['evolve_1PA'] = False
-                use_1pa = False
+                m1, m2, a, p0, e0, dev_1, dev_2 = theta
+                add_kwargs['dev_1'] = dev_1
+                add_kwargs['dev_2'] = dev_2
+                add_kwargs['deviation_included'] = True
+                add_kwargs['evolve_1PA'] = False
+        else:
+            print("For entrinsic parameters, phase metric is not supported. Returning inf.")
+            assert False, "For entrinsic parameters, phase metric is not supported. Returning inf."
 
         # Build trajectory for the chosen template order (0PA or 1PA) without 2PA
         SK_traj_tmpl = EMRIInspiral(func=KerrEccEqFlux)
 
         traj_0 = SK_traj_tmpl.get_inspiral(
-            m1, m2, a, p0, e0, ctx['Y0'], add_args['chi2'], use_1pa, False,  False, False,False,False,add_args['dev_1'],add_args['dev_1'],
-            Phi_phi0 = Phi_phi0, Phi_theta0 = ctx['Phi_theta0'], Phi_r0 = Phi_r0,
+            m1, m2, a, p0, e0, ctx['Y0'], add_kwargs['chi2'], add_kwargs['evolve_1PA'], add_kwargs['evolve_primary'], add_kwargs['evolve_2PA'],
+            add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2'],
+            Phi_phi0 = ctx['Phi_phi0'], Phi_theta0 = ctx['Phi_theta0'], Phi_r0 = ctx['Phi_r0'],
         T=ctx['T'], dt=ctx['dt'], err=1e-11, DENSE_STEPPING=False,
         buffer_length=1000, integrate_backwards=False,
         max_step_size=None,)
@@ -391,16 +435,17 @@ def objective_factory(target_func: str,
         dOmega_geo = Omega_phi_0_interp - Omega_phi_1PA_interp
         dOmega_SI = dOmega_geo / Msec
         dphi = np.concatenate([[0.0], m_mode * cumulative_trapezoid(dOmega_SI, t_common)])
-        num = np.trapz(w * dphi**2, t_common)
-        den = np.trapz(w, t_common)
+        num = np.trapezoid(w * dphi**2, t_common)
+        den = np.trapezoid(w, t_common)
         res = np.sqrt(num / den)
+
         # Print theta as a copyable NumPy array with high precision
-        theta_repr = "np.array(" + np.array2string(
-            theta,
-            formatter={'float_kind': lambda x: f"{x:.12g}"},
-            separator=', '
-        ) + ")"
-        print(f"{res:.6g}", 'param', theta_repr)
+        # theta_repr = "np.array(" + np.array2string(
+        #     theta,
+        #     formatter={'float_kind': lambda x: f"{x:.12g}"},
+        #     separator=', '
+        # ) + ")"
+        # print(f"{res:.6g}", 'param', theta_repr)
         return res
 
     def score_phase_match(theta: np.ndarray) -> float:
@@ -413,7 +458,7 @@ def objective_factory(target_func: str,
         return score_phase_match
     else:
         raise ValueError(f"Unknown target_func: {target_func}")
-    
+        
 
 def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 300, xatol: float = 1e-10, fatol: float = 1e-12): #300
     res = minimize(
@@ -423,6 +468,7 @@ def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 300, xato
         options={'maxiter': maxiter, 'maxfev': 300, 'xatol': xatol, 'fatol': fatol},
     )
     return res
+
 
 def run_paris(ndim: int,
               prior_center: np.ndarray,
@@ -475,7 +521,7 @@ def run_paris(ndim: int,
     sigma = 1e-3
     init_cov_list = [sigma**2 * np.eye(ndim) for _ in range(n_seed)]
     config = parismc.SamplerConfig(
-        proc_merge_prob=0.9,
+        merge_confidence=0.9,
         alpha=1000,
         #latest_prob_index=1000,
         trail_size=int(1e3),
@@ -569,7 +615,7 @@ def run_paris(ndim: int,
 
     try:
         sampler.run_sampling(
-            num_iterations=2000,
+            num_iterations=3000,
             savepath=savepath,
             print_iter=100,
             external_lhs_points=external_lhs_points,
@@ -579,70 +625,108 @@ def run_paris(ndim: int,
         print(f"[WARN] PARIS sampling failed: {exc}")
     return sampler, paris_prior_transform, external_lhs_points
 
+
 def main():
 
-    signal_param_array = Config.signal
-    optimizer = Config.optimizer
-    target_func = Config.target_func
-    dt = Config.dt
-    T = Config.T
-    chi2= Config.chi2
-    dev_1 = Config.dev_1
-    dev_2 = Config.dev_2
-
+    cfg = Config()
+    signal_param_array = cfg.params
+    optimizer = cfg.optimizer
+    target_func = cfg.target_func
+    base_dir =cfg.basedir
     timestamp = time.strftime('%Y%m%d-%H%M%S')
-
-    # Create a base output directory to store all artifacts for this run
-    base_dir = f"opt_{optimizer}_{target_func}_{timestamp}"
-    os.makedirs(base_dir, exist_ok=True)
-
-    print('Preparing true waveform or phase')
-    # Collect optimized rows and JSON summaries for optional batch save (num, 17)
-   
+    #add starting point#
+    
+    
+    parameter_selected = cfg.parameter_selected
+    run_type = cfg.run_type
+    dt = cfg.dt
+    T = cfg.T
+    chi2= cfg.chi2
+    dev_1 = cfg.dev_1
+    dev_2 = cfg.dev_2
+    
+    startingpoints = cfg.startingpoints
+    id = int(startingpoints[-5:])
+    starting_point =  load_startingpoint_param_array(startingpoints)
+    
+    emri_kwargs = {"T": T, "dt": dt,'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': False,'deviation_included': True,
+                   'dev_1': dev_1, 'dev_2': dev_2}
+    add_kwargs = {'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': False,'deviation_included': True,
+                   'dev_1': dev_1, 'dev_2': dev_2}
+    
     if target_func in ('optimal_snr', 'optimal_snr_phase_max'):
-        ctx = prepare_true_waveform(signal_param_array, use_gpu=True)
+        
+        ctx = prepare_true_waveform(signal_param_array, emri_kwargs, add_kwargs, use_gpu=True)
     else:
-            (
-                m1, m2, a, p0, e0, Y0,
-                dist, qS, phiS, qK, phiK,
-                Phi_phi0, Phi_theta0, Phi_r0, 
-            ) = signal_param_array,
-            ctx = {
-                'm1': m1, 'm2': m2, 'a': a, 'p0': p0, 'e0': e0, 'Y0': Y0,
-                'dist': dist, 'qS': qS, 'phiS': phiS, 'qK': qK, 'phiK': phiK,
-                'Phi_phi0': Phi_phi0, 'Phi_theta0': Phi_theta0, 'Phi_r0': Phi_r0,
-                'dt': dt, 'T': T, 'chi2': chi2, 'dev_1': dev_1, 'dev_2': dev_2
-            }
-
-    # pack some keys explicitly needed later in objective
-    for k in ['m1', 'm2', 'a', 'p0', 'e0', 'Y0', 'chi2', 'dist', 'qS', 'phiS', 'qK', 'phiK', 'Phi_phi0', 'Phi_theta0', 'Phi_r0', 'dt', 'T','dev_1','dev_2']:
+        (
+            m1, m2, a, p0, e0, Y0,
+            dist, qS, phiS, qK, phiK,
+            Phi_phi0, Phi_theta0, Phi_r0, 
+        ) = signal_param_array
+        ctx = {
+            'm1': m1, 'm2': m2, 'a': a, 'p0': p0, 'e0': e0, 'Y0': Y0,
+            'dist': dist, 'qS': qS, 'phiS': phiS, 'qK': qK, 'phiK': phiK,
+            'Phi_phi0': Phi_phi0, 'Phi_theta0': Phi_theta0, 'Phi_r0': Phi_r0,
+            'dt': dt, 'T': T, 'chi2': chi2, 'dev_1': dev_1, 'dev_2': dev_2
+        }
+    
+    for k in ['m1', 'm2', 'a', 'p0', 'e0', 'Y0', 'dist', 'qS', 'phiS', 'qK', 'phiK', 'Phi_phi0', 'Phi_theta0', 'Phi_r0', 'chi2','dt', 'T','dev_1','dev_2']:
         assert k in ctx, f"Missing {k} in 1PA context"
-
+    
     # Initial theta from startingpoint array if available, else from signal row
-    if Config.run_type == '0pa_vs_1pa' and Config.parameter_selected == "intrinsic":
-            theta_names = ['m1', 'm2', 'a', 'p0', 'e0']
-            theta0 = np.array([m1,m2,a,p0,e0], dtype=float)
-            ndim = 5
-    elif Config.run_type == '0pa_vs_1pa_dev' and Config.parameter_selected == "intrinsic":
-            assert "Not implemented yet: deviation_included=True with intrinsic-only inference"
-
-    elif Config.run_type == '0pa_vs_1pa' and Config.parameter_selected == "extrinsic":
+    if cfg.run_type == '0pa_vs_1pa' and cfg.parameter_selected == "intrinsic":
+        theta_names = ['m1', 'm2', 'a', 'p0', 'e0']
+        if starting_point is not None:
+            theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'], starting_point['e0']], dtype=float)
+        else:
+            theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0']], dtype=float)
+        ndim = 5
+    elif cfg.run_type == '0pa_vs_1pa_dev' and cfg.parameter_selected == "intrinsic":
+        #assert "Not implemented yet: deviation_included=True with intrinsic-only inference"
+        theta_names = ['m1', 'm2', 'a', 'p0', 'e0','dev_1','dev_2']
+        if starting_point is not None:
+            theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'],
+                                starting_point['e0'], starting_point['dev_1'], starting_point['dev_2']], dtype=float)
+        else:
+            theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'], ctx['dev_1'], ctx['dev_2']], dtype=float)
+        ndim = 7
+    elif cfg.run_type == '0pa_vs_1pa' and cfg.parameter_selected == "extrinsic":
         theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0']
-        theta0 = np.array([m1, m2, a, p0, e0,qS, phiS, Phi_phi0, Phi_r0], dtype=float)
+        if starting_point is not None:
+            theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'], 
+                               starting_point['e0'], starting_point['qS'], starting_point['phiS'], starting_point['Phi_phi0'],
+                                 starting_point['Phi_r0']], dtype=float)
+        else:
+            theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'], ctx['qS'],
+                                ctx['phiS'], ctx['Phi_phi0'], ctx['Phi_r0']], dtype=float)
         ndim = 9
-    elif Config.run_type == '0pa_vs_1pa_dev' and Config.parameter_selected == "extrinsic":
+    
+    elif cfg.run_type == '0pa_vs_1pa_dev' and cfg.parameter_selected == "extrinsic":
         theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0','dev_1','dev_2']
-        theta0 = np.array([m1, m2, a, p0, e0,qS, phiS, Phi_phi0, Phi_r0, dev_1, dev_2], dtype=float)
+        if starting_point is not None:
+            theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'],
+                                starting_point['p0'], starting_point['e0'], starting_point['qS'],
+                                starting_point['phiS'], starting_point['Phi_phi0'], starting_point['Phi_r0'],
+                                  starting_point['dev_1'], starting_point['dev_2']], dtype=float)
+        else:
+            theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'],
+                                ctx['qS'], ctx['phiS'], ctx['Phi_phi0'], ctx['Phi_r0'], ctx['dev_1'], ctx['dev_2']], dtype=float)
         ndim = 11
-    else:         raise ValueError(f"Unsupported run_type {Config.run_type} with parameter_selected {Config.parameter_selected}")
-
-
+    
+    else:  raise ValueError(f"Unsupported run_type {cfg.run_type} with parameter_selected {cfg.parameter_selected}")
+    
     # Objective setup with tracker for fallback support
+    #no 1PA for analysis manifold
+    add_kwargs['evolve_1PA'] = False
+    
     phase_max_flag = (target_func == 'optimal_snr_phase_max')
     raw_objective = objective_factory(
         target_func=target_func,
         ctx=ctx,
         phase_max=phase_max_flag,
+        infer_deviation_included= run_type == '0pa_vs_1pa_dev',
+        only_intrinsic_params= parameter_selected == "intrinsic",
+        add_kwargs=add_kwargs,
     )
     tracker = ObjectiveTracker(theta0)
     def tracked_objective(theta: np.ndarray) -> float:
@@ -658,179 +742,344 @@ def main():
     objective = tracked_objective
     result = None
     if optimizer == 'nelder-mead':
-        try:
-            # Constrain search to remain within relative deviation of original (ctx-based) parameters
-            tol = 1e-6 #1e-8 1pa emri #1e-6
-            theta_ref = theta0.copy()
-            def bounded_objective(theta: np.ndarray) -> float:
-                denom = np.abs(theta_ref) #+ 1e-30
-                rel = np.abs(np.asarray(theta) - theta_ref) / denom
-                if np.any(rel > tol):
-                    return 1e7
-                # Nelder–Mead minimizes; convert larger-is-better score to loss
-                score_val = objective(theta)
-                return -float(score_val)
-            result = nelder_mead_optimize(
-                theta0,
-                bounded_objective,
-                xatol=Config.nm_xatol,
-                fatol=Config.nm_fatol,
-            )
-            best_score = -float(result.fun)
-            tracker.update(result.x, best_score)
-
-            # Per-index output directory named with best score and optimized point
-            
-            _opt_vals = result.x
-            
-            _vals_str = ','.join(f"{v:.12g}" for v in _opt_vals)
-            idx_dir = os.path.join(base_dir, f"{best_score:.12g}_{_vals_str}")
-            os.makedirs(idx_dir, exist_ok=True)
-            out = {
-                'optimizer': 'nelder-mead',
-                'target_func': Config.target_func,
-                'theta0': theta0.tolist(),
-                'x': result.x.tolist(),
-                'fun': float(result.fun),
-                'best_score': best_score,
-                'success': bool(result.success),
-                'snr_ref_2pa': float(ctx.get('snr', np.nan)),
-            }
-            out_name = os.path.join(idx_dir, f"opt_nelder-mead_{Config.target_func}_{timestamp}.json")
-            with open(out_name, 'w') as f:
-                json.dump(out, f, indent=2)
-            print(f"Saved result: {out_name}")
-            print(f"[RESULT] Best loss (=-score): {out['fun']:.6e}")
-            print(f"[RESULT] Best score: {out['best_score']:.6e}")
-            print(f"[RESULT] Best point: {out['x']}")
-            
-    else:  # PARIS
-        try:
             try:
+                # Constrain search to remain within relative deviation of original (ctx-based) parameters
+                tol = 1e-6 #1e-8 1pa emri #1e-6
+                theta_ref = theta0.copy()
+                def bounded_objective(theta: np.ndarray) -> float:
+                    denom = np.abs(theta_ref) #+ 1e-30
+                    rel = np.abs(np.asarray(theta) - theta_ref) / denom
+                    if np.any(rel > tol):
+                        return 1e7
+                    # Nelder–Mead minimizes; convert larger-is-better score to loss
+                    score_val = objective(theta)
+                    return -float(score_val)
+                result = nelder_mead_optimize(
+                    theta0,
+                    bounded_objective,
+                    xatol=cfg.nm_xatol,
+                    fatol=cfg.nm_fatol,
+                )
+                best_score = -float(result.fun)
+                tracker.update(result.x, best_score)
+    
+                # Per-index output directory named with best score and optimized point
+                
+                _opt_vals = result.x
+                
+                _vals_str = ','.join(f"{v:.12g}" for v in _opt_vals)
+                idx_dir = os.path.join(base_dir, f"{best_score:.12g}_{_vals_str}")
+                os.makedirs(idx_dir, exist_ok=True)
+                out = {
+                    'optimizer': 'nelder-mead',
+                    'target_func': cfg.target_func,
+                    'theta0': theta0.tolist(),
+                    'x': result.x.tolist(),
+                    'fun': float(result.fun),
+                    'best_score': best_score,
+                    'success': bool(result.success),
+                    'snr_ref_1pa': float(ctx.get('snr', np.nan)),
+                }
+                out_name = os.path.join(idx_dir, f"opt_nelder-mead_{cfg.target_func}_{timestamp}_id_{id}.json")
+                with open(out_name, 'w') as f:
+                    json.dump(out, f, indent=2)
+                print(f"Saved result: {out_name}")
+                print(f"[RESULT] Best loss (=-score): {out['fun']:.6e}")
+                print(f"[RESULT] Best score: {out['best_score']:.6e}")
+                print(f"[RESULT] Best point: {out['x']}")
+                if not result.success:
+                    print(f"[WARN] Nelder-Mead optimization did not converge: {result.message}")
+    
+                match ndim:
+                    case 5:
+                        print(f"Optimized (m1, m2, a, p0, e0): {result.x}")
+                        result_array = np.copy(starting_point)
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0']
+                        for i, key in enumerate(starting_point_keys):
+                            result_array[key] = result.x[i]
+                        print(f"Optimized parameters as array: {result_array}")
+                        np.save(os.path.join(idx_dir, f"results_nelder_mead_{id+1}_time_{timestamp}.npy"), result_array)
+                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                    case 7:
+                        print(f"Optimized (m1, m2, a, p0, e0, dev_1, dev_2): {result.x}")
+                        result_array = np.copy(starting_point)
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'dev_1', 'dev_2']
+                        for i, key in enumerate(starting_point_keys):
+                            result_array[key] = result.x[i]
+                        print(f"Optimized parameters as array: {result_array}")
+                        np.save(os.path.join(idx_dir, f"results_nelder_mead_{id+1}_time_{timestamp}.npy"), result_array)
+                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                    case 9:
+                        print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0): {result.x}")
+                        result_array = np.copy(starting_point)
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0']
+                        for i, key in enumerate(starting_point_keys):
+                            result_array[key] = result.x[i]
+                        print(f"Optimized parameters as array: {result_array}")
+                        np.save(os.path.join(idx_dir, f"results_nelder_mead_{id+1}_time_{timestamp}.npy"), result_array)
+                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                    case 11:
+                        print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0, dev_1, dev_2): {result.x}")
+                        result_array = np.copy(starting_point)
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0', 'dev_1', 'dev_2']
+                        for i, key in enumerate(starting_point_keys):
+                            result_array[key] = result.x[i]
+                        print(f"Optimized parameters as array: {result_array}")
+                        np.save(os.path.join(idx_dir, f"results_nelder_mead_{id+1}_time_{timestamp}.npy"), result_array)
+                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                    case _:
+                        print(f"Optimized parameters: {result.x}")
+    
+            except Exception as exc:
+                print(f"[ERROR] Nelder-Mead optimization failed: {exc}")
+    elif optimizer == 'paris':
+        # --- PARIS Optimization Block ---
+
+        try:
+        # if True:
+            # ---------------------------
+            # Fisher prior computation
+            # ---------------------------
+            try:
+                import cupy as cP
+                USE_GPU = True
+            except ImportError:
+                USE_GPU = False
+
+            try:
+                add_kwargs['evolve_1PA'] = False
                 Q, b, fisher_meta = compute_fisher_parallelotope(
                     ctx=ctx,
-                    theta0=theta0,
-                    use_gpu=(Config.target_func in ('optimal_snr', 'optimal_snr_phase_max')),
-                    prior_sigma_range=float(Config.prior_sigma_range),
-                    using_evec=Config.using_evec,)
-                fisher_ok = True
-            except Exception as e:
-                    raise RuntimeError(f"[FATAL] Fisher prior failed: {e}")
+                    params_to_infer=cfg.param_names_to_infer,
+                    fisher_params=signal_param_array,
+                    use_gpu=USE_GPU,
+                    prior_sigma_range=float(cfg.prior_sigma_range),
+                    using_evec=cfg.using_evec,
+                    additional_kwargs=add_kwargs,
+                    build_waveform_response= build_waveform_response
 
-            idx_dir = os.path.join(base_dir, f"paris_{Config.target_func}")
-            os.makedirs(idx_dir, exist_ok=True)
-            savepath = os.path.join(idx_dir, f"paris_results_{Config.target_func}_{timestamp}")
-            lhs_seed_rel = 'lhs_seed'
-            lhs_seed_dir = os.path.join(idx_dir, lhs_seed_rel)
-            sampler, prior_transform, ext_points = run_paris(
-                    ndim=ndim,
-                    prior_center=theta0,
-                    score_func=objective,
-                    spread_scale=float(Config.spread_scale),
-                    savepath=savepath,
-                    seed_cloud=int(Config.seed_cloud),
-                    seed_jitter=float(Config.seed_jitter),
-                    target_kind=Config.target_func,
-                    lhs_save_dir=lhs_seed_dir,
-                    affine_Q=Q if fisher_ok else None,
-                    affine_b=b if fisher_ok else None,
-                    use_ellipse=bool(fisher_meta.get('using_evec', False)),
                 )
+                fisher_ok = True
 
-            out = {
-                    'optimizer': 'PARIS',
-                    'target_func': Config.target_func,
-                    'theta0': theta0.tolist(),
-                    'snr_ref_2pa': float(ctx.get('snr', np.nan)),
-                    'savepath': savepath,
-                    'fisher_prior': True,
-                    'fisher_meta': fisher_meta,}
-
-            best_theta = None
-            try:
-                pts = sampler.searched_points_list
-                logs = sampler.searched_log_densities_list
-                if not pts or not logs:
-                    raise ValueError("Empty PARIS search results")
-                best_unit = pts[0][int(np.argmax(logs[0]))]
-                best_theta = prior_transform(best_unit)
             except Exception as e:
-                print(f"[WARN] PARIS best extraction failed: {e}; using fallback point")
-                fallback = getattr(sampler, '_fallback_best_point', None)
-                if fallback is None:
-                    raise RuntimeError("PARIS failed and no fallback best point available") from e
-                best_theta = np.asarray(fallback, dtype=float)
+                raise RuntimeError(f"[FATAL] Fisher prior failed: {e}") from e
+
+            # ---------------------------
+            # Directory setup
+            # ---------------------------
+            idx_dir = os.path.join(base_dir, f"paris_{cfg.target_func}")
+            os.makedirs(idx_dir, exist_ok=True)
+
+            savepath = os.path.join(idx_dir, f"paris_results_{cfg.target_func}_{timestamp}_id_{id}")
+            lhs_seed_rel = "lhs_seed"
+            lhs_seed_dir = os.path.join(idx_dir, lhs_seed_rel)
+
+            # ---------------------------
+            # Run PARIS optimizer
+            # ---------------------------
+            sampler, prior_transform, ext_points = run_paris(
+                ndim=ndim,
+                prior_center=theta0,
+                score_func=objective,
+                spread_scale=float(cfg.spread_scale),
+                savepath=savepath,
+                seed_cloud=int(cfg.seed_cloud),
+                seed_jitter=1e-10,
+                target_kind=cfg.target_func,
+                lhs_save_dir=lhs_seed_dir,
+                affine_Q=Q if fisher_ok else None,
+                affine_b=b if fisher_ok else None,
+                use_ellipse=bool(fisher_meta.get("using_evec", False)),
+            )
+
+            # ---------------------------
+            # Extract best point
+            # ---------------------------
+            def extract_best_point():
+                try:
+                    pts = sampler.searched_points_list
+                    logs = sampler.searched_log_densities_list
+
+                    if not pts or not logs:
+                        raise ValueError("Empty PARIS search results")
+
+                    best_unit = pts[0][int(np.argmax(logs[0]))]
+                    return prior_transform(best_unit)
+
+                except Exception as e:
+                    print(f"[WARN] Best extraction failed: {e}, using fallback")
+
+                    fallback = getattr(sampler, "_fallback_best_point", None)
+                    if fallback is None:
+                        raise RuntimeError("No fallback best point available") from e
+
+                    return np.asarray(fallback, dtype=float)
+
+            best_theta = extract_best_point()
 
             if best_theta is None:
-                print("[WARN] No PARIS best point available; using starting point as placeholder")
+                print("[WARN] Using starting point as fallback")
                 best_theta = theta0
 
-            if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
-                best_theta = prior_transform(np.asarray(best_theta))
             best_theta = np.asarray(best_theta, dtype=float)
+
+            # Transform if still in unit cube
+            if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
+                best_theta = prior_transform(best_theta)
+
             best_val = float(objective(best_theta))
-            ctx_polish = dict(ctx)
-           
+
+            # ---------------------------
+            # Local polishing (Gaussian steps)
+            # ---------------------------
+            best_fit_points = signal_param_array
+            if cfg.parameter_selected == "intrinsic":
+                if cfg.run_type == '0pa_vs_1pa':
+                    best_fit_points[0:5] = best_theta
+
+                elif cfg.run_type == '0pa_vs_1pa_dev':
+                    best_fit_points[0:5] = best_theta
+                    add_kwargs['dev_1'] = best_theta[5]
+                    add_kwargs['dev_2'] = best_theta[6]
+                else:
+                    print(f"[WARN] Unsupported run_type {cfg.run_type} for best_fit_points assignment with parameter_selected=intrinsic")
+            else:
+                if cfg.run_type == '0pa_vs_1pa':
+                    best_fit_points[0:5] = best_theta[0:5]
+                    best_fit_points[7:9] = best_theta[5:7]
+                    best_fit_points[11] = best_theta[7]
+                    best_fit_points[13] = best_theta[8]
+
+                elif cfg.run_type == '0pa_vs_1pa_dev':
+                    best_fit_points[0:5] = best_theta[0:5]
+                    best_fit_points[7:9] = best_theta[5:7]
+                    best_fit_points[11] = best_theta[7]
+                    best_fit_points[13] = best_theta[8]
+                    add_kwargs['dev_1'] = best_theta[9]
+                    add_kwargs['dev_2'] = best_theta[10]
+                else:
+                    print(f"[WARN] Unsupported run_type {cfg.run_type} for best_fit_points assignment with parameter_selected=extrinsic")
+
+
             Qp, bp, _ = compute_fisher_parallelotope(
-                ctx=ctx_polish,
-                theta0=np.asarray(best_theta),
-                use_gpu=(Config.target_func in ('optimal_snr', 'optimal_snr_phase_max')),
-                prior_sigma_range=float(Config.prior_sigma_range),
-                using_evec=Config.using_evec,
+                       ctx=ctx,
+                    params_to_infer=cfg.param_names_to_infer,
+                    fisher_params=best_fit_points,
+                    use_gpu=USE_GPU,
+                    prior_sigma_range=float(cfg.prior_sigma_range),
+                    using_evec=cfg.using_evec,
+                    additional_kwargs=add_kwargs,
+                    build_waveform_response= build_waveform_response
+                )
+
+            cov = covariance_from_fisher_parallelotope(
+                Qp, bp, prior_sigma_range=float(cfg.prior_sigma_range)
             )
-            cov = covariance_from_fisher_parallelotope(Qp, bp, prior_sigma_range=float(Config.prior_sigma_range))
+
             rng = np.random.default_rng()
             ndim_local = len(best_theta)
-            for _it in range(500):
-                step = rng.multivariate_normal(mean=np.zeros(ndim_local), cov=1e-5 * cov)
-                cand = np.asarray(best_theta) + step
-                cand = _clip_physical_params_intrinsic(cand)
-                val = float(objective(np.asarray(cand)))
+
+            for _ in range(500):
+                step = rng.multivariate_normal(
+                    mean=np.zeros(ndim_local),
+                    cov=1e-5 * cov,
+                )
+
+                cand = _clip_physical_params_intrinsic(best_theta + step)
+                val = float(objective(cand))
+
                 if val > best_val:
-                    best_val = val
-                    best_theta = cand
+                    best_theta, best_val = cand, val
+
             tracker.update(best_theta, best_val)
+
             print(f"[POLISH] Final best score: {best_val:.6e}")
-            print(f"[POLISH] Final best point: {np.asarray(best_theta).tolist()}")
-           
-            _opt_vals = np.asarray(best_theta)
-            _vals_str = ','.join(f"{float(v):.12g}" for v in _opt_vals)
-            new_idx_dir = os.path.join(base_dir, f"idx{idx}_{best_val:.12g}_{_vals_str}")
-            try:
-                if os.path.abspath(new_idx_dir) != os.path.abspath(idx_dir):
-                    os.rename(idx_dir, new_idx_dir)
-                    idx_dir = new_idx_dir
-                    savepath = os.path.join(idx_dir, os.path.basename(savepath))
-            except Exception:
-                pass
+            print(f"[POLISH] Final best point: {best_theta.tolist()}")
+
+            # ---------------------------
+            # Rename directory based on result
+            # ---------------------------
+            vals_str = ",".join(f"{float(v):.12g}" for v in best_theta)
+            new_idx_dir = os.path.join(base_dir, f"{best_val:.12g}_{vals_str}")
+
+            if os.path.abspath(new_idx_dir) != os.path.abspath(idx_dir):
+                os.rename(idx_dir, new_idx_dir)
+                idx_dir = new_idx_dir
+                savepath = os.path.join(idx_dir, os.path.basename(savepath))
+
             lhs_seed_dir = os.path.join(idx_dir, lhs_seed_rel)
-            out_enriched = dict(out)
-            out_enriched['savepath'] = savepath
-            out_enriched.update({
-                'best_point': np.asarray(best_theta).tolist(),
-                'best_score': float(best_val),
-                'lhs_seed_dir': lhs_seed_dir,
-            })
-            out_name = os.path.join(idx_dir, f"opt_PARIS_{Config.target_func}_{timestamp}.json")
-            with open(out_name, 'w') as f:
-                json.dump(out_enriched, f, indent=2)
-            opt_row = np.array(sig_row, dtype=float)
-            if pa_template == '0PA':
-                opt_row[:5] = np.asarray(best_theta)[:5]
-            else:
-                opt_row[:5] = np.asarray(best_theta)[:5]
-                if len(best_theta) > 5:
-                    opt_row[16] = np.asarray(best_theta)[5]
-            opt_array = opt_row.reshape(1, -1)
-            out_npy = os.path.join(idx_dir, f"opt_PARIS_{Config.target_func}_{timestamp}.npy")
-            np.save(out_npy, opt_array)
-            print(f"Saved optimized row to {out_npy} with shape {opt_array.shape}")
-            score_npy = os.path.join(idx_dir, f"score_PARIS_{Config.target_func}_{timestamp}.npy")
-            np.save(score_npy, np.array([best_val], dtype=float))
-            print(f"Saved per-index score to {score_npy}")
- 
+
+            # ---------------------------
+            # Save outputs
+            # ---------------------------
+            out = {
+                "optimizer": "PARIS",
+                "target_func": cfg.target_func,
+                "theta0": theta0.tolist(),
+                "snr_ref_2pa": float(ctx.get("snr", np.nan)),
+                "savepath": savepath,
+                "fisher_prior": True,
+                "fisher_meta": fisher_meta,
+                "best_point": best_theta.tolist(),
+                "best_score": best_val,
+                "lhs_seed_dir": lhs_seed_dir,
+            }
+
+            json_path = os.path.join(idx_dir, f"opt_PARIS_{cfg.target_func}_{timestamp}.json")
+            with open(json_path, "w") as f:
+                json.dump(out, f, indent=2)
+
+            np.save(
+                os.path.join(idx_dir, f"score_PARIS_{cfg.target_func}_{timestamp}.npy"),
+                np.array([best_val], dtype=float),
+            )
+
+            match ndim:
+                        case 5:
+                            print(f"Optimized (m1, m2, a, p0, e0): {result.x}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta[i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case 7:
+                            print(f"Optimized (m1, m2, a, p0, e0, dev_1, dev_2): {result.x}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'dev_1', 'dev_2']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta[i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case 9:
+                            print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0): {result.x}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta[i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case 11:
+                            print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0, dev_1, dev_2): {result.x}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0', 'dev_1', 'dev_2']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta  [i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case _:
+                            print(f"Optimized parameters: {result.x}")
+
+        # ---------------------------
+        # Global failure handler
+        # ---------------------------
         except Exception as exc:
             print(f"[WARN] PARIS optimization failed: {exc}")
+            
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

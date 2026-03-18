@@ -18,6 +18,7 @@ class Config:
           3.31765439e+01,  1.04719755e+00,  7.85398163e-01, 6.28318531e-01,  5.23598776e-01,  1.00000000e-01,
          2.00000000e-01,  3.00000000e-01])
         
+        
         self.params_name = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
                          "Phi_phi0","Phi_theta0","Phi_r0"]
         
@@ -36,14 +37,15 @@ class Config:
         self.target_func = 'phase_match'  #Default target function for optimization
         self.optimizer = 'PARIS'  #Default optimizer
         # self.signal_param_array = np.array([])  #To be loaded from file or defined in code
-        self.startingpoints = 'signal_parameter_array_IMRI.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
+        self.startingpoints = 'signal_parameter_from_run_0.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
 
         self.parameter_selected = "intrinsic" #or "extrinsic"
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
         self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
 
         self.basedir = "/scratch/e1583490/try"
-        self.prior_sigma_range = 400.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 50.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
 
         # self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
     
@@ -76,46 +78,63 @@ class Config:
         return Config(**kwargs)
 
     def print_summary(self):
-        """Print a summary of current configuration."""
+        """Print a detailed summary of current configuration."""
 
-        print("CONFIGURATION DETAILS")
+        print("=" * 60)
+        print("CONFIGURATION SUMMARY")
+        print("=" * 60)
 
-        print("\n--- Parameters ---")
+        # ------------------ PARAMETERS ------------------
+        print("\n--- All Parameters ---")
+        if len(self.params_name) != len(self.params):
+            print("WARNING: params_name and params length mismatch!")
+
         for i, (name, value) in enumerate(zip(self.params_name, self.params)):
-            print(f"  [{i:02d}] {name:12s} : {value:.6e}")
+            tag = " (inferred)" if name in self.param_names_to_infer else ""
+            print(f"[{i:02d}] {name:12s} : {value:.6e}{tag}")
 
+        # ------------------ INFERENCE ------------------
         print("\n--- Inference Parameters ---")
+        print(f"Parameters to infer ({len(self.param_names_to_infer)}):")
         for p in self.param_names_to_infer:
             print(f"  - {p}")
 
-        print("\n--- Computation ---")
-        print(f"  dt                : {self.dt}")
-        print(f"  T                 : {self.T}")
-        print(f"  TARGET_SNR        : {self._TARGET_SNR}")
+        # ------------------ COMPUTATION ------------------
+        print("\n--- Computation Settings ---")
+        print(f"dt                : {self.dt}")
+        print(f"T                 : {self.T}")
+        print(f"TARGET_SNR        : {self._TARGET_SNR}")
+        print(f"include_noise     : {self.include_noise}")
 
-        print("\n--- Optimizer ---")
-        print(f"  optimizer         : {self.optimizer}")
-        print(f"  target_func       : {self.target_func}")
-        print(f"  nm_xatol          : {self.nm_xatol}")
-        print(f"  nm_fatol          : {self.nm_fatol}")
+        # ------------------ OPTIMIZER ------------------
+        print("\n--- Optimizer Settings ---")
+        print(f"optimizer         : {self.optimizer}")
+        print(f"target_func       : {self.target_func}")
+        print(f"nm_xatol          : {self.nm_xatol}")
+        print(f"nm_fatol          : {self.nm_fatol}")
 
+        # ------------------ PARIS ------------------
         print("\n--- PARIS Settings ---")
-        print(f"  spread_scale      : {self.spread_scale}")
-        print(f"  sigma_range       : {self.sigma_range}")
-        print(f"  using_evec        : {self.using_evec}")
-        print(f"  seed_cloud        : {self.seed_cloud}")
+        print(f"spread_scale      : {self.spread_scale}")
+        print(f"prior_sigma_range : {self.prior_sigma_range}")
+        print(f"using_evec        : {self.using_evec}")
+        print(f"seed_cloud        : {self.seed_cloud}")
 
+        # ------------------ RUN SETUP ------------------
         print("\n--- Run Setup ---")
-        print(f"  grid_index        : {self.grid_index}")
-        print(f"  startingpoints    : {self.startingpoints}")
-        print(f"  parameter_selected: {self.parameter_selected}")
-        print(f"  run_type          : {self.run_type}")
+        print(f"grid_index        : {self.grid_index}")
+        print(f"startingpoints    : {self.startingpoints}")
+        print(f"parameter_selected: {self.parameter_selected}")
+        print(f"run_type          : {self.run_type}")
+        print(f"basedir           : {self.basedir}")
 
+        # ------------------ DIAGNOSTICS ------------------
         print("\n--- Diagnostics ---")
-        print(f"  chi2              : {self.chi2}")
-        print(f"  dev_1             : {self.dev_1}")
-        print(f"  dev_2             : {self.dev_2}")
+        print(f"chi2              : {self.chi2}")
+        print(f"dev_1             : {self.dev_1}")
+        print(f"dev_2             : {self.dev_2}")
 
+        print("\n" + "=" * 60)
     if __name__ == "__main__":
         cfg = get_default_config()
         cfg.print_summary()
