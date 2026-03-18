@@ -15,7 +15,7 @@ class Config:
         self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']
 
         self.sigma_range = 400.0
-        self.params = np.array([1e6,1e3,0.9, 16,  5.00000000e-01,  1.00000000e+00,
+        self.params = np.array([1e6,1e4,0.9, 2.85813146e+01,  5.00000000e-01,  1.00000000e+00,
           3.31765439e+01,  1.04719755e+00,  7.85398163e-01, 6.28318531e-01,  5.23598776e-01,  1.00000000e-01,
          2.00000000e-01,  3.00000000e-01])
         
@@ -24,7 +24,7 @@ class Config:
         
         self.dt = 10  #Time step for waveform generation; default 0.1s
         self.T= 0.25
-        self.chi2 = 0.0
+        self.chi2 = 0.95
         self.dev_1 = 0.0
         self.dev_2 = 0.0
 

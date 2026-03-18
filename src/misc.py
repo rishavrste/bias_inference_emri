@@ -361,7 +361,7 @@ def timemax_correlation(h1, h2,dt, PSD, xp=np):
     return  xp.max(xp.abs(S))
 
 #use detection SNR and also use max phase if phase_max is True
-def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
                     maximize_phase=False,
                     **fixed):
@@ -381,7 +381,6 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     optimal_snr_x = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
     denom = xp.sqrt(optimal_snr * optimal_snr_x)
 
-
     if (maximize_phase):
         num = inner_prod_without_phase(signal, h_f, PSD, fixed['delta_f'], xp=cp)
     else:  
@@ -393,7 +392,40 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
         print(f"[WARN] SNR computation returned {snr}; setting to 0")
         return -np.inf
     # print(snr)
-    return float(snr)
+    return float(snr) 
+
+def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+                    Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
+                    maximize_phase=False,
+                    **fixed):
+    xp = cp if fixed['use_gpu'] else np
+    signal = fixed['waveform_true_fft']
+    waveform_response = fixed['waveform_response']
+    wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+                    Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
+                    add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+    emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
+                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
+               'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    PSD = fixed['PSD']
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+    optimal_snr = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
+    denom = xp.sqrt(optimal_snr)
+
+
+    if (maximize_phase):
+        num = inner_prod_without_phase(signal, h_f, PSD, fixed['delta_f'], xp=cp)
+    else:  
+        num = inner_prod(signal, h_f, PSD, fixed['delta_f'], xp=cp)
+    
+    snr = num / denom
+
+    if(xp.isnan(snr) or xp.isinf(snr)):
+        print(f"[WARN] SNR computation returned {snr}; setting to 0")
+        return -np.inf
+    return float(snr) 
+
 
 def load_startingpoint_param_array():
     pass
