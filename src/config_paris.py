@@ -3,7 +3,7 @@ from typing import Optional
 import numpy as np
 import warnings
 import traceback
-
+import json
 
 
 class Config:
@@ -43,8 +43,9 @@ class Config:
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
         self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.basedir = "/scratch/e1583490/try"
         self.prior_sigma_range = 50.0  #Default range for uniform prior in PARIS (±20% of center)
+
+        self.basedir = "/scratch/e1583490/try"  #Base directory for saving results; can be overridden by --basedir CLI arg
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
 
         # self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
@@ -135,6 +136,59 @@ class Config:
         print(f"dev_2             : {self.dev_2}")
 
         print("\n" + "=" * 60)
+
+    def to_dict(self):
+        """Convert config to a serializable dictionary."""
+        return {
+            k: (v.tolist() if isinstance(v, np.ndarray) else v)
+            for k, v in self.__dict__.items()
+            if not k.startswith("_")  # optional: skip private vars
+        }
+    
+    def save_results_with_config(cfg, results: dict, save_dir: str, filename_prefix: str):
+        """
+        Save results + config to:
+        1. JSON (structured)
+        2. Text file (human readable)
+        """
+
+        os.makedirs(save_dir, exist_ok=True)
+
+        timestamp = time.strftime('%Y%m%d-%H%M%S')
+
+        # -------- JSON (structured) --------
+        full_output = {
+            "timestamp": timestamp,
+            "config": cfg.to_dict(),
+            "results": results,
+        }
+
+        json_path = os.path.join(save_dir, f"{filename_prefix}_{timestamp}.json")
+        with open(json_path, "w") as f:
+            json.dump(full_output, f, indent=2)
+
+        # -------- TEXT (human readable) --------
+        text_path = os.path.join(save_dir, cfg.output_text_file)
+
+        with open(text_path, "a") as f:
+            f.write("\n" + "=" * 80 + "\n")
+            f.write(f"RUN TIMESTAMP: {timestamp}\n")
+
+            # ---- CONFIG ----
+            f.write("\n--- CONFIG ---\n")
+            for k, v in cfg.to_dict().items():
+                f.write(f"{k}: {v}\n")
+
+            # ---- RESULTS ----
+            f.write("\n--- RESULTS ---\n")
+            for k, v in results.items():
+                f.write(f"{k}: {v}\n")
+
+            f.write("=" * 80 + "\n")
+
+        print(f"[SAVE] JSON: {json_path}")
+        print(f"[SAVE] TEXT: {text_path}")
+
     if __name__ == "__main__":
         cfg = get_default_config()
         cfg.print_summary()

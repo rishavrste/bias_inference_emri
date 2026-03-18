@@ -34,6 +34,7 @@ try:
 except:
     xp=np
 
+
 # -----------------------------
 # PARIS global context (picklable functions require module scope)
 # -----------------------------..l
@@ -50,15 +51,11 @@ _PARIS_AFFINE_B = None            # type: Optional[np.ndarray]
 _PARIS_DIM = None                 # type: Optional[int]
 _PARIS_USE_ELLIPSE = True
 
+cfg = Config()
 # Target SNR for Fisher scaling
-_TARGET_SNR = Config()._TARGET_SNR
-
-params_to_infer = Config().param_names_to_infer
-dt = Config().dt
-T = Config().T
-chi2 = Config().chi2
-dev_1 = Config().dev_1
-dev_2 = Config().dev_2
+_TARGET_SNR = cfg._TARGET_SNR
+base_dir = cfg.basedir
+save_results_with_config = cfg.save_results_with_config
 
 
 def paris_prior_transform(u):
@@ -439,8 +436,7 @@ def objective_factory(target_func: str,
         den = np.trapezoid(w, t_common)
         res = np.sqrt(num / den)
 
-        # Print theta as a copyable NumPy array with high precision
-        # theta_repr = "np.array(" + np.array2string(
+        # theta_repr = "np.array(" + np.array2string(                   # Print theta as a copyable NumPy array with high precision
         #     theta,
         #     formatter={'float_kind': lambda x: f"{x:.12g}"},
         #     separator=', '
@@ -468,7 +464,6 @@ def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 300, xato
         options={'maxiter': maxiter, 'maxfev': 300, 'xatol': xatol, 'fatol': fatol},
     )
     return res
-
 
 def run_paris(ndim: int,
               prior_center: np.ndarray,
@@ -636,7 +631,6 @@ def main():
     timestamp = time.strftime('%Y%m%d-%H%M%S')
     #add starting point#
     
-    
     parameter_selected = cfg.parameter_selected
     run_type = cfg.run_type
     dt = cfg.dt
@@ -675,7 +669,7 @@ def main():
     
     # Initial theta from startingpoint array if available, else from signal row
     if cfg.run_type == '0pa_vs_1pa' and cfg.parameter_selected == "intrinsic":
-        theta_names = ['m1', 'm2', 'a', 'p0', 'e0']
+        #theta_names = ['m1', 'm2', 'a', 'p0', 'e0']
         if starting_point is not None:
             theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'], starting_point['e0']], dtype=float)
         else:
@@ -683,7 +677,7 @@ def main():
         ndim = 5
     elif cfg.run_type == '0pa_vs_1pa_dev' and cfg.parameter_selected == "intrinsic":
         #assert "Not implemented yet: deviation_included=True with intrinsic-only inference"
-        theta_names = ['m1', 'm2', 'a', 'p0', 'e0','dev_1','dev_2']
+        #theta_names = ['m1', 'm2', 'a', 'p0', 'e0','dev_1','dev_2']
         if starting_point is not None:
             theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'],
                                 starting_point['e0'], starting_point['dev_1'], starting_point['dev_2']], dtype=float)
@@ -691,7 +685,7 @@ def main():
             theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'], ctx['dev_1'], ctx['dev_2']], dtype=float)
         ndim = 7
     elif cfg.run_type == '0pa_vs_1pa' and cfg.parameter_selected == "extrinsic":
-        theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0']
+        #theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0']
         if starting_point is not None:
             theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'], 
                                starting_point['e0'], starting_point['qS'], starting_point['phiS'], starting_point['Phi_phi0'],
@@ -702,7 +696,7 @@ def main():
         ndim = 9
     
     elif cfg.run_type == '0pa_vs_1pa_dev' and cfg.parameter_selected == "extrinsic":
-        theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0','dev_1','dev_2']
+        #theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0','dev_1','dev_2']
         if starting_point is not None:
             theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'],
                                 starting_point['p0'], starting_point['e0'], starting_point['qS'],
@@ -767,8 +761,9 @@ def main():
                 
                 _opt_vals = result.x
                 
-                _vals_str = ','.join(f"{v:.12g}" for v in _opt_vals)
-                idx_dir = os.path.join(base_dir, f"{best_score:.12g}_{_vals_str}")
+                _vals_str = '_'.join(f"{v:.6e}" for v in _opt_vals)
+                nealder_mead_dir = os.path.join(base_dir, f"nelder_mead_{target_func}_run_id_{id}")
+                idx_dir = os.path.join(nealder_mead_dir, f"{best_score:.12g}_{_vals_str}")
                 os.makedirs(idx_dir, exist_ok=True)
                 out = {
                     'optimizer': 'nelder-mead',
@@ -829,6 +824,12 @@ def main():
                         np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
                     case _:
                         print(f"Optimized parameters: {result.x}")
+                save_results_with_config(
+                                        cfg=cfg,
+                                        results=out,
+                                        save_dir=idx_dir,
+                                        filename_prefix=f"opt_nelder_mead_{cfg.target_func}_id_{id}"
+                                    )
     
             except Exception as exc:
                 print(f"[ERROR] Nelder-Mead optimization failed: {exc}")
@@ -1033,6 +1034,11 @@ def main():
                 os.path.join(idx_dir, f"score_PARIS_{cfg.target_func}_{timestamp}.npy"),
                 np.array([best_val], dtype=float),
             )
+            save_results_with_config(
+            cfg=cfg,
+            results=out,
+            save_dir=idx_dir,
+            filename_prefix=f"opt_PARIS_{cfg.target_func}_id_{id}")
 
             match ndim:
                         case 5:

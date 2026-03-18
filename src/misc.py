@@ -2,7 +2,7 @@ import os
 import json
 import time
 import argparse
-from typing import Tuple, Optional
+from typing import Tuple, Optional,Dict, Any
 from scipy.signal.windows import tukey
 import numpy as np
 try:
@@ -432,8 +432,42 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     return float(snr) 
 
 
-def load_startingpoint_param_array():
-    pass
+def load_startingpoint_param_array(
+    filename: Optional[str] = None,
+    allow_missing: bool = True
+) -> Optional[Dict[str, Any]]:
+    """
+    Load the starting-point parameters from a .npy file as a dictionary.
+
+    - If `filename` is provided, load from that path if it exists.
+    - Otherwise try default repo/CWD locations.
+    - If not found and `allow_missing` is True, return None; else raise.
+    """
+    def _load_npy(path: str) -> Dict[str, Any]:
+        return np.load(path, allow_pickle=True).item()
+
+    # Explicit path override
+    if filename is not None:
+        if os.path.exists(filename):
+            return _load_npy(filename)
+        if allow_missing:
+            return None
+        raise FileNotFoundError(f"Starting-point .npy not found at: {filename}")
+
+    # Default locations
+    default_paths = [
+        "params.npy",  # repo root
+        os.path.join(os.getcwd(), "params.npy")  # CWD fallback
+    ]
+
+    for path in default_paths:
+        if os.path.exists(path):
+            return _load_npy(path)
+
+    if allow_missing:
+        return None
+
+    raise FileNotFoundError("Starting-point .npy file not found.")
 
 def generate_colored_noise(PSD,delta_f,delta_t):
     pass
