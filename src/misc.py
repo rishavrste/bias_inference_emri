@@ -5,7 +5,12 @@ import argparse
 from typing import Tuple, Optional
 from scipy.signal.windows import tukey
 import numpy as np
-import cupy as cp
+try:
+    import cupy as cp
+except ImportError:
+    print("CuPy not found. Falling back to NumPy.")
+    xp = np
+else:    xp = cp
 # FEW / waveform & noise
 from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from stableemrifisher.utils import generate_PSD, inner_product

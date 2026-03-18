@@ -14,7 +14,6 @@ class Config:
         self._TARGET_SNR = 20.0
         self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']
 
-        self.sigma_range = 400.0
         self.params = np.array([1e6,1e4,0.9, 2.85813146e+01,  5.00000000e-01,  1.00000000e+00,
           3.31765439e+01,  1.04719755e+00,  7.85398163e-01, 6.28318531e-01,  5.23598776e-01,  1.00000000e-01,
          2.00000000e-01,  3.00000000e-01])
@@ -34,7 +33,7 @@ class Config:
         self.using_evec = True  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
         self.seed_cloud = 5000  #Number of initial unit-cube seeds for PARIS around center
         self.nm_fatol = 1e-2  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.target_func = 'optimal_snr_phase_max'  #Default target function for optimization
+        self.target_func = 'phase_match'  #Default target function for optimization
         self.optimizer = 'PARIS'  #Default optimizer
         # self.signal_param_array = np.array([])  #To be loaded from file or defined in code
         self.startingpoints = 'signal_parameter_array_IMRI.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
@@ -44,7 +43,17 @@ class Config:
         self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
 
         self.basedir = "/scratch/e1583490/try"
-        self.prior_sigma_range = 50.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 400.0  #Default range for uniform prior in PARIS (±20% of center)
+
+        # self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
+    
+    def check_initialization(self):
+    # Check if extrinsic sky parameters are included
+        if "qS" in self.param_names_to_infer or "phiS" in self.param_names_to_infer:
+            if self.target_func == 'phase_match':
+                raise ValueError(
+                    "target_func cannot be 'phase_match' when 'qS' or 'phiS' are being inferred."
+                )
         
 
     def get_default_config(**kwargs):
