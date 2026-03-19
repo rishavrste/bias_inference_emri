@@ -4,7 +4,7 @@ import numpy as np
 import warnings
 import traceback
 import json
-
+import time
 
 class Config:
 
@@ -34,10 +34,10 @@ class Config:
         self.using_evec = True  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
         self.seed_cloud = 5000  #Number of initial unit-cube seeds for PARIS around center
         self.nm_fatol = 1e-2  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.target_func = 'time_max'  #Default target function for optimization
-        self.optimizer = 'paris'  #Default optimizer
+        self.target_func = 'phase_match'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match'
+        self.optimizer = 'nelder-mead'  # nelder-mead or paris
         # self.signal_param_array = np.array([])  #To be loaded from file or defined in code
-        self.startingpoints = 'signal_parameter_from_run_0.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
+        self.startingpoints = 'signal_parameter_from_run_2.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
 
         self.parameter_selected = "intrinsic" #or "extrinsic"
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
@@ -48,7 +48,7 @@ class Config:
         self.basedir = "/scratch/e1583490/try"  #Base directory for saving results; can be overridden by --basedir CLI arg
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
 
-        # self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
+        self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
     
     def check_initialization(self):
     # Check if extrinsic sky parameters are included

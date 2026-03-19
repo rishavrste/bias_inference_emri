@@ -26,8 +26,9 @@ from stableemrifisher.fisher import StableEMRIFisher
 import matplotlib.pyplot as plt
 
 from config_paris import Config, ObjectiveTracker
-from misc import _is_pos_def, check_and_clip_prior, _clip_physical_params_intrinsic,compute_fft_with_windowing, calculate_detection_snr_0pa_vs_1pa, inner_prod,\
-    compute_fisher_parallelotope,covariance_from_fisher_parallelotope,inner_prod,load_startingpoint_param_array,calculate_time_max_0pa_vs_1pa
+from misc import  _clip_physical_params_intrinsic,compute_fft_with_windowing, calculate_detection_snr_0pa_vs_1pa, \
+    compute_fisher_parallelotope,covariance_from_fisher_parallelotope,inner_prod,load_startingpoint_param_array,\
+        calculate_time_max_0pa_vs_1pa,calculate_detection_overlap_0pa_vs_1pa
 
 try:
     import cupy as cp
@@ -36,15 +37,14 @@ except:
     xp=np
     print("CuPy not found, using NumPy instead. For GPU acceleration, please install CuPy.")
 
-
 # -----------------------------
 # PARIS global context (picklable functions require module scope)
 # -----------------------------..l
 _PARIS_REF_CENTER = None          # type: Optional[np.ndarray]
 _PARIS_SPREAD_SCALE = None        # type: Optional[float]
 _PARIS_OBJECTIVE = None           # type: Optional[callable]
-_PARIS_TARGET_KIND = None         # type: Optional[str]  # 'optimal_snr', 'optimal_snr_phase_max', 'phase_match'
-_PARIS_EARLY_STOP_HIT = False
+_PARIS_TARGET_KIND = None         # type: Optional[str]  # 'optimal_snr', 'optimal_snr_phase_max', 'phase_match', 'time_max'
+# _PARIS_EARLY_STOP_HIT = False
 
 # Fisher-parallelotope affine prior (primary for this script)
 _PARIS_AFFINE_CENTER = None       # type: Optional[np.ndarray]
@@ -57,8 +57,6 @@ cfg = Config()
 # Target SNR for Fisher scaling
 _TARGET_SNR = cfg._TARGET_SNR
 base_dir = cfg.basedir
-save_results_with_config = cfg.save_results_with_config
-
 
 def paris_prior_transform(u):
     """Prior transform using Fisher-parallelotope when configured.
@@ -129,48 +127,28 @@ def paris_inverse_prior_transform(params):
 
 
 def paris_log_density(params):
-    """Top-level log-density (actually score) wrapper with early-stop.
+    """Top-level log-density (score) wrapper without early-stop.
 
     - Receives physical parameters (after prior_transform) per parismc contract.
-    - Returns a scalar/array of scores (larger is better). After early-stop trigger,
-      subsequent evaluations return -inf to end sampling quickly.
+    - Returns a scalar/array of scores (larger is better).
     """
-    global _PARIS_EARLY_STOP_HIT
-
     params = np.asarray(params)
 
     def eval_one(x):
-        global _PARIS_EARLY_STOP_HIT
-        if _PARIS_EARLY_STOP_HIT:
-            return float('-inf')
-        try:    
+        try:
             val = float(_PARIS_OBJECTIVE(x))
         except Exception:
             return float('-inf')
-        # Early-stop policy per user spec
-        if _PARIS_TARGET_KIND in ('optimal_snr', 'optimal_snr_phase_max'):
-            if val >= 19.0:
-                _PARIS_EARLY_STOP_HIT = True
-                try:
-                    print(f"[EARLY-STOP] SNR {val:.6f} >= 19; future calls => -inf")
-                except Exception:
-                    pass
-        elif _PARIS_TARGET_KIND == 'phase_match':
-            # score = -phase_diff; trigger when phase_diff < 1.5 => score > -1.5
-            if val > -1.5:
-                _PARIS_EARLY_STOP_HIT = True
-                try:
-                    print(f"[EARLY-STOP] phase-diff {-val:.6f} < 1.5; future calls => -inf")
-                except Exception:
-                    pass
         return val
 
     if params.ndim == 1:
         return eval_one(params)
+
     out = np.zeros(params.shape[0], dtype=float)
     for i in range(params.shape[0]):
         out[i] = eval_one(params[i])
     return out
+
 
 def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> ResponseWrapper:
     """Create a LISA ResponseWrapper consistent with existing modules."""
@@ -228,6 +206,7 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
     dev_1 = add_kwargs.get('dev_1')
     dev_2 = add_kwargs.get('dev_2')
     dt = emri_kwargs['dt']
+    T=emri_kwargs['T']
 
     wave_params = [
         m1, m2, a, p0, e0, Y0,
@@ -282,6 +261,7 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
         'delta_f': freq[1]-freq[0],
         'freq': freq
     }
+
 
 def objective_factory(target_func: str,
                       ctx: dict,
@@ -645,9 +625,11 @@ def run_paris(ndim: int,
     external_lhs_log_densities = np.concatenate(log_blocks)
 
     if lhs_save_dir:
+        print(f"[INFO] Saving LHS points and log-densities to {lhs_save_dir}")
         os.makedirs(lhs_save_dir, exist_ok=True)
         np.save(os.path.join(lhs_save_dir, 'lhs_points.npy'), np.asarray(external_lhs_points, dtype=float))
         np.save(os.path.join(lhs_save_dir, 'lhs_log_densities.npy'), np.asarray(external_lhs_log_densities, dtype=float))
+        print(f"[INFO] Saved LHS points shape: {external_lhs_points.shape}, log-densities shape: {external_lhs_log_densities.shape}")
 
     max_idx = int(np.argmax(external_lhs_log_densities))
     max_point = external_lhs_points[max_idx]
@@ -668,7 +650,6 @@ def run_paris(ndim: int,
         print(f"[WARN] PARIS sampling failed: {exc}")
     return sampler, paris_prior_transform, external_lhs_points
 
-
 def main():
 
     cfg = Config()
@@ -688,40 +669,78 @@ def main():
     dev_2 = cfg.dev_2
     
     startingpoints = cfg.startingpoints
-    id = int(startingpoints[-5:])
-    starting_point =  load_startingpoint_param_array(startingpoints)
+    id = int(startingpoints[-5])
+    starting_point = load_startingpoint_param_array(startingpoints)
+    print(f"Loaded starting point from {startingpoints}: {starting_point}")
     
     emri_kwargs = {"T": T, "dt": dt,'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': False,'deviation_included': True,
                    'dev_1': dev_1, 'dev_2': dev_2}
     add_kwargs = {'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': False,'deviation_included': True,
                    'dev_1': dev_1, 'dev_2': dev_2}
-    
-    if target_func in ('optimal_snr', 'optimal_snr_phase_max'):
+
+    # if target_func in ('optimal_snr', 'optimal_snr_phase_max','time_max'):
         
-        ctx = prepare_true_waveform(signal_param_array, emri_kwargs, add_kwargs, use_gpu=True)
-    else:
-        (
-            m1, m2, a, p0, e0, Y0,
-            dist, qS, phiS, qK, phiK,
-            Phi_phi0, Phi_theta0, Phi_r0, 
-        ) = signal_param_array
-        ctx = {
-            'm1': m1, 'm2': m2, 'a': a, 'p0': p0, 'e0': e0, 'Y0': Y0,
-            'dist': dist, 'qS': qS, 'phiS': phiS, 'qK': qK, 'phiK': phiK,
-            'Phi_phi0': Phi_phi0, 'Phi_theta0': Phi_theta0, 'Phi_r0': Phi_r0,
-            'dt': dt, 'T': T, 'chi2': chi2, 'dev_1': dev_1, 'dev_2': dev_2
-        }
+    ctx = prepare_true_waveform(signal_param_array, emri_kwargs, add_kwargs, use_gpu=True)
+
+    # else:
+    #     (
+    #         m1, m2, a, p0, e0, Y0,
+    #         dist, qS, phiS, qK, phiK,
+    #         Phi_phi0, Phi_theta0, Phi_r0, 
+    #     ) = signal_param_array
+    #     ctx = {
+    #         'm1': m1, 'm2': m2, 'a': a, 'p0': p0, 'e0': e0, 'Y0': Y0,
+    #         'dist': dist, 'qS': qS, 'phiS': phiS, 'qK': qK, 'phiK': phiK,
+    #         'Phi_phi0': Phi_phi0, 'Phi_theta0': Phi_theta0, 'Phi_r0': Phi_r0,
+    #         'dt': dt, 'T': T, 'chi2': chi2, 'dev_1': dev_1, 'dev_2': dev_2
+    #     }
+    #     response = build_waveform_response(T=T, dt=dt, use_gpu=cfg.use_gpu)
+    #     wave_params_temp = [
+    #     m1, m2, a, p0, e0, Y0,
+    #     dist, qS, phiS, qK, phiK,
+    #     Phi_phi0, Phi_theta0, Phi_r0,chi2, True, False, False, False, dev_1, dev_2]
+    #     emri_kwargs_temp = {"T": T, "dt": dt, 'chi2': chi2, 'evolve_1PA': True, 'evolve_primary': False,
+    #                   'evolve_2PA': False,'deviation_included': False,'dev_1': dev_1, 'dev_2': dev_2}
+
+    #     waveform_true = xp.array(response(*wave_params_temp, **emri_kwargs_temp))
+    #     N_fiducial = len(waveform_true[0])
+    #     waveform_true_fft = compute_fft_with_windowing(waveform_true, dt, N_fiducial, use_gpu=cfg.use_gpu, n_channels=3)
+    #     del wave_params_temp, emri_kwargs_temp
+    #     print("[INFO] Finished generating true waveform for extrinsic parameters (GPU)")
+
+    #     channels = [A1TDISens, E1TDISens, T1TDISens]
+
+    #     noise_kwargs = [{"sens_fn": ch} for ch in channels]
+    #     PSD_funcs = generate_PSD(
+    #     waveform=waveform_true,
+    #     dt=dt,
+    #     noise_PSD=get_sensitivity,
+    #     channels=channels,
+    #     noise_kwargs=noise_kwargs,
+    #     use_gpu=cfg.use_gpu)
+        
+    temp_dict = {'waveform_true_fft': ctx['waveform_true_fft'], 'PSD': ctx['PSD_funcs'], 'dt': ctx['dt'], 'T': ctx['T'],
+                     'N_fiducial': ctx['N_fiducial'], 'delta_f': ctx['delta_f'], 'use_gpu': cfg.use_gpu,
+                      'waveform_response': ctx['waveform_response'],'xp': cp if cfg.use_gpu else np}
     
     for k in ['m1', 'm2', 'a', 'p0', 'e0', 'Y0', 'dist', 'qS', 'phiS', 'qK', 'phiK', 'Phi_phi0', 'Phi_theta0', 'Phi_r0', 'chi2','dt', 'T','dev_1','dev_2']:
         assert k in ctx, f"Missing {k} in 1PA context"
-    
+
     # Initial theta from startingpoint array if available, else from signal row
+    
     if cfg.run_type == '0pa_vs_1pa' and cfg.parameter_selected == "intrinsic":
         #theta_names = ['m1', 'm2', 'a', 'p0', 'e0']
         if starting_point is not None:
             theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'], starting_point['e0']], dtype=float)
         else:
             theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0']], dtype=float)
+         
+        initial_overlap =calculate_detection_overlap_0pa_vs_1pa(
+                    m1=starting_point['m1'], m2=starting_point['m2'], a=starting_point['a'], p0=starting_point['p0'], e0=starting_point['e0'], Y0=ctx['Y0'], dist=ctx['dist'], qS=ctx['qS'], phiS=ctx['phiS'], qK=ctx['qK'], phiK=ctx['phiK'],
+                    Phi_phi0=ctx['Phi_phi0'], Phi_theta0=ctx['Phi_theta0'], Phi_r0=ctx['Phi_r0'], add_kwargs=add_kwargs,
+                    maximize_phase=False,
+                    **temp_dict)
+        print("Current  Overlap:",initial_overlap )
         ndim = 5
     elif cfg.run_type == '0pa_vs_1pa_dev' and cfg.parameter_selected == "intrinsic":
         #assert "Not implemented yet: deviation_included=True with intrinsic-only inference"
@@ -731,6 +750,16 @@ def main():
                                 starting_point['e0'], starting_point['dev_1'], starting_point['dev_2']], dtype=float)
         else:
             theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'], ctx['dev_1'], ctx['dev_2']], dtype=float)
+        temp_kwargs = add_kwargs.copy()
+        temp_kwargs['dev_1'] = theta0[5]
+        temp_kwargs['dev_2'] = theta0[6]
+        initial_overlap= calculate_detection_overlap_0pa_vs_1pa(
+                    m1=starting_point['m1'], m2=starting_point['m2'], a=starting_point['a'], p0=starting_point['p0'], e0=starting_point['e0'], Y0=ctx['Y0'], dist=ctx['dist'], qS=ctx['qS'], phiS=ctx['phiS'], qK=ctx['qK'], phiK=ctx['phiK'],
+                    Phi_phi0=ctx['Phi_phi0'], Phi_theta0=ctx['Phi_theta0'], Phi_r0=ctx['Phi_r0'], add_kwargs=temp_kwargs,
+                    maximize_phase=False,
+                    **temp_dict)
+        print("Current  Overlap:",initial_overlap)
+        
         ndim = 7
     elif cfg.run_type == '0pa_vs_1pa' and cfg.parameter_selected == "extrinsic":
         #theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0']
@@ -742,6 +771,12 @@ def main():
             theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'], ctx['qS'],
                                 ctx['phiS'], ctx['Phi_phi0'], ctx['Phi_r0']], dtype=float)
         ndim = 9
+        initial_overlap=calculate_detection_overlap_0pa_vs_1pa(
+                    m1=starting_point['m1'], m2=starting_point['m2'], a=starting_point['a'], p0=starting_point['p0'], e0=starting_point['e0'], Y0=ctx['Y0'], dist=ctx['dist'], qS=starting_point['qS'], phiS=starting_point['phiS'], qK=ctx['qK'], phiK=ctx['phiK'],
+                    Phi_phi0=ctx['Phi_phi0'], Phi_theta0=ctx['Phi_theta0'], Phi_r0=ctx['Phi_r0'], add_kwargs=add_kwargs,
+                    maximize_phase=False,
+                    **temp_dict) 
+        print("Current  Overlap:",initial_overlap)
     
     elif cfg.run_type == '0pa_vs_1pa_dev' and cfg.parameter_selected == "extrinsic":
         #theta_names = ['m1', 'm2', 'a', 'p0', 'e0','qS', 'phiS', 'Phi_phi0', 'Phi_r0','dev_1','dev_2']
@@ -754,11 +789,21 @@ def main():
             theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0'],
                                 ctx['qS'], ctx['phiS'], ctx['Phi_phi0'], ctx['Phi_r0'], ctx['dev_1'], ctx['dev_2']], dtype=float)
         ndim = 11
+        temp_kwargs = add_kwargs.copy()
+        temp_kwargs['dev_1'] = theta0[5]
+        temp_kwargs['dev_2'] = theta0[6]
+        initial_overlap = calculate_detection_overlap_0pa_vs_1pa(
+                    m1=starting_point['m1'], m2=starting_point['m2'], a=starting_point['a'], p0=starting_point['p0'], e0=starting_point['e0'], Y0=ctx['Y0'], dist=ctx['dist'], qS=starting_point['qS'], phiS=starting_point['phiS'], qK=ctx['qK'], phiK=ctx['phiK'],
+                    Phi_phi0=ctx['Phi_phi0'], Phi_theta0=ctx['Phi_theta0'], Phi_r0=ctx['Phi_r0'], add_kwargs=temp_kwargs,
+                    maximize_phase=False,
+                    **temp_dict) 
+        print("Current  Overlap:",initial_overlap)
     
     else:  raise ValueError(f"Unsupported run_type {cfg.run_type} with parameter_selected {cfg.parameter_selected}")
     
     # Objective setup with tracker for fallback support
     #no 1PA for analysis manifold
+    #del temp_dict
     add_kwargs['evolve_1PA'] = False
     
     phase_max_flag = (target_func == 'optimal_snr_phase_max')
@@ -813,16 +858,7 @@ def main():
                 nealder_mead_dir = os.path.join(base_dir, f"nelder_mead_{target_func}_run_id_{id}")
                 idx_dir = os.path.join(nealder_mead_dir, f"{best_score:.12g}_{_vals_str}")
                 os.makedirs(idx_dir, exist_ok=True)
-                out = {
-                    'optimizer': 'nelder-mead',
-                    'target_func': cfg.target_func,
-                    'theta0': theta0.tolist(),
-                    'x': result.x.tolist(),
-                    'fun': float(result.fun),
-                    'best_score': best_score,
-                    'success': bool(result.success),
-                    'snr_ref_1pa': float(ctx.get('snr', np.nan)),
-                }
+                
                 out_name = os.path.join(idx_dir, f"opt_nelder-mead_{cfg.target_func}_{timestamp}_id_{id}.json")
                 with open(out_name, 'w') as f:
                     json.dump(out, f, indent=2)
@@ -872,7 +908,31 @@ def main():
                         np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
                     case _:
                         print(f"Optimized parameters: {result.x}")
-                save_results_with_config(
+
+                add_kwargs['evolve_1PA'] = False
+
+                add_kwargs['dev_1'] = result_array['dev_1'] if 'dev_1' in result_array else add_kwargs.get('dev_1', 0.0)
+                add_kwargs['dev_2'] = result_array['dev_2'] if 'dev_2' in result_array else add_kwargs.get('dev_2', 0.0)
+                final_overlap = calculate_detection_overlap_0pa_vs_1pa(
+                    result_array['m1'], result_array['m2'], result_array['a'], result_array['p0'], result_array['e0'], ctx['Y0'],ctx['dist'],result_array['qS'],result_array['phiS'], ctx['qK'], ctx['phiK'], 
+                    result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],add_kwargs,
+                    maximize_phase=False,
+                    **ctx)
+                print("Overlap of the best point:", final_overlap)
+                out = {
+                    'optimizer': 'nelder-mead',
+                    'target_func': cfg.target_func,
+                    'theta0': theta0.tolist(),
+                    'x': result.x.tolist(),
+                    'fun': float(result.fun),
+                    'best_score': best_score,
+                    'success': bool(result.success),
+                    'snr_ref_1pa': float(ctx.get('snr', np.nan)),
+                    'initial_overlap': float(initial_overlap),
+                    'final_overlap': float(final_overlap),
+                }
+                
+                Config.save_results_with_config(
                                         cfg=cfg,
                                         results=out,
                                         save_dir=idx_dir,
@@ -881,6 +941,7 @@ def main():
     
             except Exception as exc:
                 print(f"[ERROR] Nelder-Mead optimization failed: {exc}")
+                
     elif optimizer == 'paris':
         # --- PARIS Optimization Block ---
 
@@ -909,6 +970,7 @@ def main():
 
                 )
                 fisher_ok = True
+                print("Fisher parallelotope computed successfully.")
 
             except Exception as e:
                 raise RuntimeError(f"[FATAL] Fisher prior failed: {e}") from e
@@ -1048,19 +1110,79 @@ def main():
             # ---------------------------
             # Rename directory based on result
             # ---------------------------
-            vals_str = ",".join(f"{float(v):.12g}" for v in best_theta)
-            new_idx_dir = os.path.join(base_dir, f"{best_val:.12g}_{vals_str}")
+            # vals_str = ",".join(f"{float(v):.12g}" for v in best_theta)
+            # new_idx_dir = os.path.join(base_dir, f"{best_val:.12g}_{vals_str}")
 
-            if os.path.abspath(new_idx_dir) != os.path.abspath(idx_dir):
-                os.rename(idx_dir, new_idx_dir)
-                idx_dir = new_idx_dir
-                savepath = os.path.join(idx_dir, os.path.basename(savepath))
+            # if os.path.abspath(new_idx_dir) != os.path.abspath(idx_dir):
+            #     os.rename(idx_dir, new_idx_dir)
+            #     idx_dir = new_idx_dir
+            #     savepath = os.path.join(idx_dir, os.path.basename(savepath))
 
             lhs_seed_dir = os.path.join(idx_dir, lhs_seed_rel)
 
             # ---------------------------
             # Save outputs
             # ---------------------------
+
+            json_path = os.path.join(idx_dir, f"opt_PARIS_{cfg.target_func}_{timestamp}.json")
+            with open(json_path, "w") as f:
+                json.dump(out, f, indent=2)
+
+            np.save(
+                os.path.join(idx_dir, f"score_PARIS_{cfg.target_func}_{timestamp}.npy"),
+                np.array([best_val], dtype=float),
+            )
+
+            match ndim:
+                        case 5:
+                            print(f"Optimized (m1, m2, a, p0, e0): {best_theta}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta[i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case 7:
+                            print(f"Optimized (m1, m2, a, p0, e0, dev_1, dev_2): {best_theta}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'dev_1', 'dev_2']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta[i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case 9:
+                            print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0): {best_theta}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta[i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case 11:
+                            print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0, dev_1, dev_2): {best_theta}")
+                            result_array = np.copy(starting_point)
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0', 'dev_1', 'dev_2']
+                            for i, key in enumerate(starting_point_keys):
+                                result_array[key] = best_theta[i]
+                            print(f"Optimized parameters as array: {result_array}")
+                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
+                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        case _:
+                            print(f"Optimized parameters: {best_theta}")
+
+            add_kwargs['evolve_1PA'] = False
+
+            add_kwargs['dev_1'] = result_array['dev_1'] if 'dev_1' in result_array else add_kwargs.get('dev_1', 0.0)
+            add_kwargs['dev_2'] = result_array['dev_2'] if 'dev_2' in result_array else add_kwargs.get('dev_2', 0.0)
+            final_overlap = calculate_detection_overlap_0pa_vs_1pa(
+                    result_array['m1'], result_array['m2'], result_array['a'], result_array['p0'], result_array['e0'], ctx['Y0'],ctx['dist'],result_array['qS'],result_array['phiS'], ctx['qK'], ctx['phiK'], 
+                    result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],add_kwargs,
+                    maximize_phase=False,
+                    **temp_dict)
+            print("Overlap of the best point:", final_overlap)
             out = {
                 "optimizer": "PARIS",
                 "target_func": cfg.target_func,
@@ -1072,61 +1194,14 @@ def main():
                 "best_point": best_theta.tolist(),
                 "best_score": best_val,
                 "lhs_seed_dir": lhs_seed_dir,
+                "initial_overlap": float(initial_overlap),
+                 "final_overlap": float(final_overlap),
             }
-
-            json_path = os.path.join(idx_dir, f"opt_PARIS_{cfg.target_func}_{timestamp}.json")
-            with open(json_path, "w") as f:
-                json.dump(out, f, indent=2)
-
-            np.save(
-                os.path.join(idx_dir, f"score_PARIS_{cfg.target_func}_{timestamp}.npy"),
-                np.array([best_val], dtype=float),
-            )
-            save_results_with_config(
+            Config.save_results_with_config(
             cfg=cfg,
             results=out,
             save_dir=idx_dir,
             filename_prefix=f"opt_PARIS_{cfg.target_func}_id_{id}")
-
-            match ndim:
-                        case 5:
-                            print(f"Optimized (m1, m2, a, p0, e0): {result.x}")
-                            result_array = np.copy(starting_point)
-                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0']
-                            for i, key in enumerate(starting_point_keys):
-                                result_array[key] = best_theta[i]
-                            print(f"Optimized parameters as array: {result_array}")
-                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
-                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
-                        case 7:
-                            print(f"Optimized (m1, m2, a, p0, e0, dev_1, dev_2): {result.x}")
-                            result_array = np.copy(starting_point)
-                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'dev_1', 'dev_2']
-                            for i, key in enumerate(starting_point_keys):
-                                result_array[key] = best_theta[i]
-                            print(f"Optimized parameters as array: {result_array}")
-                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
-                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
-                        case 9:
-                            print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0): {result.x}")
-                            result_array = np.copy(starting_point)
-                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0']
-                            for i, key in enumerate(starting_point_keys):
-                                result_array[key] = best_theta[i]
-                            print(f"Optimized parameters as array: {result_array}")
-                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
-                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
-                        case 11:
-                            print(f"Optimized (m1, m2, a, p0, e0, qS, phiS, Phi_phi0, Phi_r0, dev_1, dev_2): {result.x}")
-                            result_array = np.copy(starting_point)
-                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0', 'dev_1', 'dev_2']
-                            for i, key in enumerate(starting_point_keys):
-                                result_array[key] = best_theta  [i]
-                            print(f"Optimized parameters as array: {result_array}")
-                            np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
-                            np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
-                        case _:
-                            print(f"Optimized parameters: {result.x}")
 
         # ---------------------------
         # Global failure handler
