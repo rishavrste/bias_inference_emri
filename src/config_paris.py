@@ -34,8 +34,8 @@ class Config:
         self.using_evec = True  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
         self.seed_cloud = 5000  #Number of initial unit-cube seeds for PARIS around center
         self.nm_fatol = 1e-2  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.target_func = 'phase_match'  #Default target function for optimization
-        self.optimizer = 'PARIS'  #Default optimizer
+        self.target_func = 'time_max'  #Default target function for optimization
+        self.optimizer = 'paris'  #Default optimizer
         # self.signal_param_array = np.array([])  #To be loaded from file or defined in code
         self.startingpoints = 'signal_parameter_from_run_0.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
 
@@ -43,7 +43,7 @@ class Config:
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
         self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 50.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 100.0  #Default range for uniform prior in PARIS (±20% of center)
 
         self.basedir = "/scratch/e1583490/try"  #Base directory for saving results; can be overridden by --basedir CLI arg
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format

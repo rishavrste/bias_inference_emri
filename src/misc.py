@@ -5,12 +5,7 @@ import argparse
 from typing import Tuple, Optional,Dict, Any
 from scipy.signal.windows import tukey
 import numpy as np
-try:
-    import cupy as cp
-except ImportError:
-    print("CuPy not found. Falling back to NumPy.")
-    xp = np
-else:    xp = cp
+
 # FEW / waveform & noise
 from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
@@ -22,6 +17,13 @@ from lisatools.detector import EqualArmlengthOrbits
 from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from few.waveform import GenerateEMRIWaveform
 from few.waveform.waveform import SuperKludgeWaveform
+
+try:
+    import cupy as cp
+    xp=cp
+except:
+    xp=np
+    print("CuPy not found, using NumPy instead.")
 
 def _is_pos_def(mat: np.ndarray) -> bool:
     """Return True if matrix is positive-definite via Cholesky test."""
@@ -348,22 +350,6 @@ def inner_prod(signal_1_f, signal_2_f, PSD, delta_f, xp=np):
 def inner_prod_without_phase(signal_1_f, signal_2_f, PSD, delta_f, xp=np):
     return 4 * delta_f * xp.abs(xp.sum(signal_1_f * signal_2_f.conj() / PSD))
 
-def timemax_correlation(h1, h2,dt, PSD, xp=np):
-
-    # FFT with dt scaling
-    H1 = xp.array([xp.fft.rfft(h1[k]) * dt for k in range(2)])
-    H2 = xp.array([xp.fft.rfft(h2[k]) * dt for k in range(2)])
-    # print("H1 shape: ", H1.shape
-    #       ,"H2 shape: ", H2.shape)
-    # print("PSD shape: ", PSD.shape)
-
-    Y = xp.zeros_like(H1)
-    for i in range(2):
-        Y[i,1:] = H1[i,1:] * xp.conj(H2[i,1:]) / (0.5 * PSD[i])  # Avoid DC component
-    # IFFT to time domain with proper normalization
-    S =xp.array([xp.fft.irfft(Y[i]) / dt for i in range(2)])
-    # Return maximum correlation
-    return  xp.max(xp.abs(S))
 
 #use detection SNR and also use max phase if phase_max is True
 def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
@@ -394,7 +380,7 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
     snr = num / denom
 
     if(xp.isnan(snr) or xp.isinf(snr)):
-        print(f"[WARN] SNR computation returned {snr}; setting to 0")
+        print(f"[WARN] overlap computation returned {snr}; setting to 0")
         return -np.inf
     # print(snr)
     return float(snr) 
@@ -431,6 +417,49 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
         return -np.inf
     return float(snr) 
 
+def timemax_correlation(h1, h2,dt, PSD, xp=np):
+
+    # FFT with dt scaling
+    H1 = xp.array([xp.fft.rfft(h1[k]) * dt for k in range(2)])
+    H2 = xp.array([xp.fft.rfft(h2[k]) * dt for k in range(2)])
+    # print("H1 shape: ", H1.shape
+    #       ,"H2 shape: ", H2.shape)
+    # print("PSD shape: ", PSD.shape)
+
+    Y = xp.zeros_like(H1)
+    for i in range(2):
+        Y[i,1:] = H1[i,1:] * xp.conj(H2[i,1:]) / (0.5 * PSD[i])  # Avoid DC component
+    # IFFT to time domain with proper normalization
+    S =xp.array([xp.fft.irfft(Y[i]) / dt for i in range(2)])
+    # Return maximum correlation
+    return  xp.max(xp.abs(S))
+
+
+def calculate_time_max_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+                    Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
+                    **fixed):
+    xp = cp if fixed['use_gpu'] else np
+    signal = fixed['waveform_true_fft']
+    waveform_response = fixed['waveform_response']
+    wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+                    Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
+                    add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+    emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
+                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
+               'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    PSD = fixed['PSD']
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+    Y = xp.zeros_like(h_f)
+    for i in range(2):
+        Y[i,1:] = h_f[i,1:] * xp.conj(signal[i,1:]) / (0.5 * PSD[i,1:])  # Avoid DC component
+    # IFFT to time domain with proper normalization
+    S =xp.array([xp.fft.irfft(Y[i]) / fixed['dt'] for i in range(2)])
+    # Return maximum correlation
+    if (xp.max(xp.abs(S)) is xp.nan or xp.max(xp.abs(S)) is xp.inf):
+        print(f"[WARN] Time-max correlation computation returned {xp.max(xp.abs(S))}; setting to 0")
+        return -np.inf
+    return  xp.max(xp.abs(S)) 
 
 def load_startingpoint_param_array(
     filename: Optional[str] = None,

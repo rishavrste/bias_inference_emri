@@ -6,7 +6,7 @@ from typing import Tuple, Optional
 
 import numpy as np
 from scipy.optimize import minimize
-import cupy as cp
+
 #few and SEF imports
 from few.waveform import GenerateEMRIWaveform
 from few.waveform.waveform import SuperKludgeWaveform
@@ -27,12 +27,14 @@ import matplotlib.pyplot as plt
 
 from config_paris import Config, ObjectiveTracker
 from misc import _is_pos_def, check_and_clip_prior, _clip_physical_params_intrinsic,compute_fft_with_windowing, calculate_detection_snr_0pa_vs_1pa, inner_prod,\
-    compute_fisher_parallelotope,covariance_from_fisher_parallelotope,inner_prod,load_startingpoint_param_array
+    compute_fisher_parallelotope,covariance_from_fisher_parallelotope,inner_prod,load_startingpoint_param_array,calculate_time_max_0pa_vs_1pa
+
 try:
     import cupy as cp
     xp=cp
 except:
     xp=np
+    print("CuPy not found, using NumPy instead. For GPU acceleration, please install CuPy.")
 
 
 # -----------------------------
@@ -294,7 +296,7 @@ def objective_factory(target_func: str,
     - 'phase_match': score = -phase_diff_metric (maximize score => minimize phase diff)
     """
     # Only needed for SNR-based objective
-    if target_func in ('optimal_snr', 'optimal_snr_phase_max'):
+    if target_func in ('optimal_snr', 'optimal_snr_phase_max','time_max'):
         fixed = {
             'waveform_response': ctx['waveform_response'],
             'PSD': ctx['PSD_funcs'],
@@ -351,6 +353,50 @@ def objective_factory(target_func: str,
                     Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,
                     maximize_phase=bool(phase_max),
                     **fixed)
+                #print(val, 'param', repr(theta))
+        # Score is the SNR itself (maximize)
+        return float(val)
+    
+    def score_time_max(theta: np.ndarray) -> float:
+        if only_intrinsic_params == True:
+            if infer_deviation_included == False:
+                m1, m2, a, p0, e0 = theta
+                add_kwargs['evolve_1PA'] = False
+                val = calculate_time_max_0pa_vs_1pa(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+                    ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_kwargs,
+                    **fixed,)
+                
+            else:
+                m1, m2, a, p0, e0, dev_1, dev_2 = theta
+                add_kwargs['evolve_1PA'] = False
+                add_kwargs['deviation_included'] = False
+                add_kwargs['dev_1'] = dev_1
+                add_kwargs['dev_2'] = dev_2
+                val = calculate_time_max_0pa_vs_1pa(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+                    ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_kwargs,
+                    **fixed,)
+
+        else:
+            if infer_deviation_included:
+                m1, m2, a, p0, e0,qS,phiS,Phi_phi0,Phi_r0,dev_1,dev_2 = theta
+                add_kwargs['dev_1'] = dev_1
+                add_kwargs['dev_2'] = dev_2
+                add_kwargs['evolve_1PA'] = False
+                add_kwargs['deviation_included'] = False
+                val = calculate_time_max_0pa_vs_1pa(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],qS,phiS, ctx['qK'], ctx['phiK'], 
+                    Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,
+                    **fixed)
+               # print(val, 'param', repr(theta))
+                
+            else:
+                m1, m2, a, p0, e0,qS,phiS,Phi_phi0,Phi_r0 = theta
+                add_kwargs['evolve_1PA'] = False
+                val = calculate_time_max_0pa_vs_1pa(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],qS,phiS, ctx['qK'], ctx['phiK'], 
+                    Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,**fixed)
                 #print(val, 'param', repr(theta))
         # Score is the SNR itself (maximize)
         return float(val)
@@ -452,6 +498,8 @@ def objective_factory(target_func: str,
         return score_optimal_snr
     elif target_func == 'phase_match':
         return score_phase_match
+    elif target_func == 'time_max':
+        return score_time_max
     else:
         raise ValueError(f"Unknown target_func: {target_func}")
         
