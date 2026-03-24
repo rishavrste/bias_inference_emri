@@ -11,42 +11,46 @@ class Config:
     def __init__(self, **kwargs):
     
         # Target SNR for Fisher scaling
-        self._TARGET_SNR = 20.0
-        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']
+      #  self._TARGET_SNR = 20.0
+        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0']
 
-        self.params = np.array([1e6,1e4,0.9, 2.85813146e+01,  5.00000000e-01,  1.00000000e+00,
-          3.31765439e+01,  1.04719755e+00,  7.85398163e-01, 6.28318531e-01,  5.23598776e-01,  1.00000000e-01,
-         2.00000000e-01,  3.00000000e-01])
+        self.params = np.array([1e6,1e1,0.9, 7.5,  5.00000000e-01,  1.00000000e+00,
+          5.0,  np.pi/4,  1.0, 1,  np.pi/3,  9.00000000e-01,
+         5.00000000e-01,  4.00000000e-01])
         
+        # [m1, m2, a, p0, e0, xI0, dist, qS, phiS, qK, phiK, Phi_phi0, Phi_theta0, Phi_r0,\
+        #      chi2,evolve_1PA,evolve_primary,evolve_2PA,deviation_included,dev_0_p,dev_0_e,dev_1_p,dev_1_e,dev_2_p,dev_2_e]
         
         self.params_name = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
                          "Phi_phi0","Phi_theta0","Phi_r0"]
         
         self.dt = 10  #Time step for waveform generation; default 0.1s
-        self.T= 0.25
-        self.chi2 = 0.95
+        self.T= 1.0
+        self.chi2 = 0.0
         self.dev_1 = 0.0
         self.dev_2 = 0.0
 
         self.spread_scale = 0.1 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
         self.grid_index = 0.0  #Default to 0; can be overridden by $GRID_INDEX env var or --grid-index CLI arg
         self.nm_xatol = 1e9  #tol for Nelder-Mead; set high to disable
-        self.using_evec = True  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
-        self.seed_cloud = 5000  #Number of initial unit-cube seeds for PARIS around center
+        self.using_evec = False  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
+        self.seed_cloud = 200  #Number of initial unit-cube seeds for PARIS around center
+        self.paris_seed_n = 99
         self.nm_fatol = 1e-2  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.target_func = 'phase_match'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match'
-        self.optimizer = 'nelder-mead'  # nelder-mead or paris
+        self.target_func = 'optimal_snr'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match','chi2_match'
+        self.optimizer = 'paris'  # nelder-mead or paris
         # self.signal_param_array = np.array([])  #To be loaded from file or defined in code
-        self.startingpoints = 'signal_parameter_from_run_2.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
+        self.startingpoints = 'starting_point_0.npy'  #Default path for starting points; can be overridden by --startingpoints CLI arg
 
-        self.parameter_selected = "intrinsic" #or "extrinsic"
+        self.parameter_selected = "extrinsic" #or "extrinsic"
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
         self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 100.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 20.0  #Default range for uniform prior in PARIS (±20% of center)
 
-        self.basedir = "/scratch/e1583490/try"  #Base directory for saving results; can be overridden by --basedir CLI arg
+        self.basedir = "/scratch/e1583490/emri_without_noise_0"  #Base directory for saving results; can be overridden by --basedir CLI arg
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
+        self.seed= 42   
 
         self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
     

@@ -1,5 +1,6 @@
 import os
 import json
+import signal
 import time
 import argparse
 from typing import Tuple, Optional,Dict, Any
@@ -17,6 +18,7 @@ from lisatools.detector import EqualArmlengthOrbits
 from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from few.waveform import GenerateEMRIWaveform
 from few.waveform.waveform import SuperKludgeWaveform
+import matplotlib.pyplot as plt
 
 try:
     import cupy as cp
@@ -24,6 +26,28 @@ try:
 except:
     xp=np
     print("CuPy not found, using NumPy instead.")
+
+__all__ = [
+    # Parameter utilities
+    "_clip_physical_params_intrinsic",
+    "load_startingpoint_param_array",
+    # Signal processing
+    "compute_fft_with_windowing",
+    "add_noise_func",
+    # Analysis & metrics
+    "calculate_detection_snr_0pa_vs_1pa",
+    "calculate_detection_overlap_0pa_vs_1pa",
+    "calculate_time_max_0pa_vs_1pa",
+    "chi2_match",
+    "inner_prod",
+    # Fisher
+    "compute_fisher_parallelotope",
+    "covariance_from_fisher_parallelotope",
+    # Plotting & validation
+    "plot_time_series_from_fft",
+    "check_noise_model_consistency",
+]
+
 
 def _is_pos_def(mat: np.ndarray) -> bool:
     """Return True if matrix is positive-definite via Cholesky test."""
@@ -131,7 +155,7 @@ def compute_fisher_parallelotope(ctx: dict,
                                  additional_kwargs: dict,
                                  build_waveform_response = None,
                                  use_gpu: bool = True,
-                                 _TARGET_SNR: float = 20.0,
+                                 _TARGET_SNR: float = None,
                                  prior_sigma_range: float = 20,
                                  using_evec: bool = False) -> Tuple[np.ndarray, np.ndarray, dict]:
     """Build Fisher-based local prior around ``theta0``.
@@ -224,13 +248,16 @@ def compute_fisher_parallelotope(ctx: dict,
 
     emri_flags = {"T": ctx['T'], "dt": ctx['dt'], '1PA': False, 'evolve_primary': False, '2PA': False}
 
-    waveform_tmpl = sef.waveform
+    waveform_tmpl = xp.array(sef.waveform)
+    print("shape of waveform_tmpl: ", waveform_tmpl.shape)
     
     PSD_funcs = generate_PSD(waveform=waveform_tmpl, dt=float(ctx['dt']), noise_PSD=get_sensitivity,
                              channels=channels, noise_kwargs=noise_kwargs, use_gpu=bool(use_gpu))
     snr_model = float(np.sqrt(inner_product(waveform_tmpl, waveform_tmpl, PSD_funcs, float(ctx['dt']), use_gpu=bool(use_gpu))))
+    print(f"[MODEL] SNR in fisher calculation: {snr_model:.6f}")
 
     # Scale Fisher to target SNR
+    print("Target SNR for scaling: ", _TARGET_SNR)
     scale = (_TARGET_SNR / max(snr_model, 1e-30)) ** 2
     print('F: scale',scale)
 
@@ -305,7 +332,7 @@ def covariance_from_fisher_parallelotope(Q: np.ndarray, b: np.ndarray, prior_sig
     return cov
 
 
-def compute_fft_with_windowing(waveform, dt, N,use_gpu=False,n_channels=3):
+def compute_fft_with_windowing(waveform, dt, N,type=None,use_gpu=False,n_channels=3):
     if use_gpu:
         try:
             xp = cp
@@ -314,10 +341,15 @@ def compute_fft_with_windowing(waveform, dt, N,use_gpu=False,n_channels=3):
             xp = np
     else:
         xp = np
-
-    window = xp.asarray(tukey(N, 0.01))
-    waveform_windowed = waveform * window
-    waveform_f = xp.asarray([xp.fft.rfft(waveform_windowed[i]) * dt for i in range(n_channels)])[:,1:]
+    if type == 'tukey':
+        window = xp.asarray(tukey(N, 0.01))
+        waveform_windowed = waveform * window
+        waveform_f = xp.asarray([xp.fft.rfft(waveform_windowed[i]) * dt for i in range(n_channels)])[:,1:]
+    else:
+        waveform_f = xp.asarray([xp.fft.rfft(waveform[i]) * dt for i in range(n_channels)])[:,1:]
+    # window = xp.asarray(tukey(N, 0.01))
+    # waveform_windowed = waveform * window
+    # waveform_f = xp.asarray([xp.fft.rfft(waveform_windowed[i]) * dt for i in range(n_channels)])[:,1:]
     return waveform_f
 
 
@@ -357,14 +389,19 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
                     maximize_phase=False,
                     **fixed):
     xp = cp if fixed['use_gpu'] else np
-    signal = fixed['waveform_true_fft']
+
+    print(" calculation withoiut noise additoin, using waveform_true_fft_without_noise for signal")
+
+    signal = fixed['waveform_true_fft_without_noise']
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
                     add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+    
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
                'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+    
     h = xp.array(waveform_response(*wave_params, **emri_kwargs))
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
@@ -415,7 +452,7 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     if(xp.isnan(snr) or xp.isinf(snr)):
         print(f"[WARN] SNR computation returned {snr}; setting to 0")
         return -np.inf
-    return float(snr) 
+    return float(snr) * 10
 
 def timemax_correlation(h1, h2,dt, PSD, xp=np):
 
@@ -498,5 +535,217 @@ def load_startingpoint_param_array(
 
     raise FileNotFoundError("Starting-point .npy file not found.")
 
-def generate_colored_noise(PSD,delta_f,delta_t):
-    pass
+def add_noise_func(signal,PSD,delta_f,delta_t,n_channels,seed=42):
+
+    covariance_noise = [PSD[k] / (2*delta_f) for k in range(n_channels)]
+    noise_f = xp.array(generate_colored_noise(covariance_noise, delta_t, seed=seed, return_time_domain=False))
+    data_f = signal + noise_f
+    return data_f, noise_f
+
+
+def generate_colored_noise(variance_noise_AET, delta_t, seed=0, return_time_domain=False):
+    """
+    Generate colored Gaussian noise with specified variance per frequency bin.
+
+    Parameters
+    ----------
+    variance_noise_AET : list or array
+        Variance per frequency bin for each channel
+        Shape: (N_channels, N_freq) or list of arrays
+    delta_t : float
+        Time sampling interval (seconds)
+    seed : int, optional
+        Random seed. Default: 0
+    window_function : array-like, optional
+        Time-domain window to apply. Default: None (no window)
+    return_time_domain : bool, optional
+        If True, return noise in time domain. Default: False (frequency domain)
+
+    Returns
+    -------
+    array or list
+        Colored noise in frequency or time domain
+        Shape: (N_channels, N_freq) or (N_channels, N_time)
+
+    Notes
+    -----
+    Generates Gaussian noise with specified variance and applies optional windowing.
+    """
+    
+    # Detect array module
+    if hasattr(variance_noise_AET[0], '__cuda_array_interface__'):
+        try:
+            import cupy as cp
+            xp = cp
+        except ImportError:
+            xp = np
+    else:
+        xp = np
+
+    # Set random seed
+    if xp is np:
+        np.random.seed(seed)
+    else:
+        xp.random.seed(seed)
+
+    N_channels = len(variance_noise_AET)
+    noise_freq = []
+
+    for k in range(N_channels):
+        # Generate white noise in frequency domain
+        variance = variance_noise_AET[k]
+        N_freq = len(variance)
+        
+        # Complex Gaussian noise
+        noise_real = xp.random.normal(0, xp.sqrt(variance / 2), N_freq)
+        noise_imag = xp.random.normal(0, xp.sqrt(variance / 2), N_freq)
+        noise_f = noise_real + 1j * noise_imag
+        
+        noise_freq.append(noise_f)
+
+    if return_time_domain:
+        # Just transform to time domain
+        return xp.asarray([xp.fft.irfft(noise_freq[k] / delta_t) for k in range(N_channels)])
+    else:
+        return xp.asarray(noise_freq)
+
+def check_noise_model_consistency(PSD, delta_f, delta_t, n_channels, temp_signal=None, seed=42):
+
+    use_gpu = (xp is cp)
+
+    # Stack PSD list → 2-D array (n_channels, N_freq), drop DC bin to match
+    # inner_product's internal [:, 1:] slice on the rfft output
+    PSD_array = xp.stack([xp.asarray(PSD[k]) for k in range(n_channels)], axis=0)
+    covariance_noise = [PSD_array[k] / (2 * delta_f) for k in range(n_channels)]
+    rng = xp.random.default_rng(seed)
+    seed_array = rng.integers(0, int(1e6), size=500)
+    noise_realizations = []
+
+    for s in seed_array:
+        noise_realizations.append(xp.array(
+            generate_colored_noise(covariance_noise, delta_t, seed=int(s), return_time_domain=True)
+        ))
+
+    noise_realizations = xp.array(noise_realizations)   # (N_real, n_channels, N_time)
+    N = noise_realizations.shape[-1]
+
+    # inner_product does rfft then [:, 1:], so it works on N//2 bins.
+    # Align PSD to exactly those N//2 bins by dropping the DC bin.
+    PSD_for_ip = PSD_array[:, 1 : N // 2 + 1]          # shape (n_channels, N//2)
+    print(f"Length of PSD: {N // 2 + 1}")
+
+    mean_noise = xp.mean(noise_realizations, axis=0)
+    _to_np = lambda arr: arr.get() if use_gpu else np.asarray(arr)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    axes[0].hist(_to_np(mean_noise.flatten()), bins=50, alpha=0.7, color="steelblue")
+    axes[0].axvline(0, color="red", linestyle="--", label="zero")
+    axes[0].set_title("Mean of Noise Realizations\n(should be centred on 0)")
+    axes[0].set_xlabel("Mean Value")
+    axes[0].set_ylabel("Count")
+    axes[0].legend()
+
+    T_sig = N
+    if temp_signal is None:
+        t = xp.linspace(0, N * delta_t, N)
+        temp_signal = xp.array([xp.sin(2 * xp.pi * t) for _ in range(n_channels)])
+    else:
+        T_sig = temp_signal.shape[-1]
+        if T_sig > N:
+            temp_signal = temp_signal[:, :N]
+        elif T_sig < N:
+            pad = xp.zeros((n_channels, N - T_sig), dtype=temp_signal.dtype)
+            temp_signal = xp.concatenate([temp_signal, pad], axis=-1)
+
+    inner_products = []
+    for noise in noise_realizations:
+        ip = inner_product(noise, temp_signal, PSD_for_ip, delta_t, use_gpu=use_gpu)
+        inner_products.append(float(_to_np(xp.asarray(ip))))
+
+    inner_products     = xp.array(inner_products)
+    var_inner_product  = float(_to_np(xp.var(inner_products)))
+    mean_inner_product = float(_to_np(xp.mean(inner_products)))
+    aa = float(_to_np(xp.asarray(
+        inner_product(temp_signal, temp_signal, PSD_for_ip, delta_t, use_gpu=use_gpu)
+    )))
+    ratio = var_inner_product / aa if aa != 0 else float("nan")
+
+    ip_np = _to_np(inner_products)
+    axes[1].hist(ip_np, bins=50, alpha=0.7, color="darkorange", density=True,
+                 label="empirical ⟨n, a⟩")
+    x = np.linspace(ip_np.min(), ip_np.max(), 300)
+    expected_std = np.sqrt(aa)
+    gaussian = np.exp(-0.5 * (x / expected_std) ** 2) / (expected_std * np.sqrt(2 * np.pi))
+    axes[1].plot(x, gaussian, "r-", lw=2, label=f"N(0, ⟨a,a⟩)  σ={expected_std:.3g}")
+    axes[1].axvline(mean_inner_product, color="blue", linestyle="--",
+                    label=f"empirical mean={mean_inner_product:.3g}")
+    axes[1].set_title(
+        f"Inner Product ⟨n, a⟩ Distribution\n"
+        f"sqrt(Var[⟨n,a⟩]={np.sqrt(var_inner_product):.4g}  ⟨a,a⟩={aa:.4g}  ratio={ratio:.4f}"
+    )
+    axes[1].set_xlabel("⟨n, a⟩")
+    axes[1].set_ylabel("Density")
+    axes[1].legend()
+    plt.tight_layout()
+    plt.show()
+
+    print("=" * 55)
+    print("  Noise model consistency check")
+    print("=" * 55)
+    print(f"  Backend                : {'CuPy (GPU)' if use_gpu else 'NumPy (CPU)'}")
+    print(f"  Realizations           : {len(seed_array)}")
+    print(f"  N time samples         : {N}  |  PSD bins passed: {PSD_for_ip.shape[-1]}")
+    print(f"  N (template samples)   : {T_sig}  →  aligned to {N}")
+    print(f"  Max |mean noise|       : {float(_to_np(xp.abs(mean_noise).max())):.4e}  (expect ≈ 0)")
+    print(f"  E[⟨n, a⟩]             : {mean_inner_product:.4e}           (expect ≈ 0)")
+    print(f"  Var[⟨n, a⟩]           : {var_inner_product:.6g}")
+    print(f"  ⟨a, a⟩                : {aa:.6g}")
+    print(f"  Ratio Var/⟨a,a⟩       : {ratio:.6f}          (expect ≈ 1.0)")
+    print("=" * 55)
+
+    return {
+        "mean_noise":         mean_noise,
+        "inner_products":     inner_products,
+        "var_inner_product":  var_inner_product,
+        "aa":                 aa,
+        "ratio":              ratio,
+    }
+
+def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+                    Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
+                    maximize_phase=False,
+                    **fixed):
+    xp = cp if fixed['use_gpu'] else np
+    signal = fixed['waveform_true_fft']
+    waveform_response = fixed['waveform_response']
+    wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+                    Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
+                    add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+    emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
+                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
+               'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    PSD = fixed['PSD']
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+    ip = inner_prod(h_f-signal, h_f-signal, PSD, fixed['delta_f'], xp=cp)
+    return -0.5 * ip 
+
+def to_numpy(arr):
+        return arr.get() if hasattr(arr, 'get') else np.asarray(arr)
+
+def plot_time_series_from_fft(signal_f, dt, title="Time Series"):
+    signal_f = xp.array(signal_f)
+    signal_f = to_numpy(signal_f)
+    signal_t = np.array([np.fft.irfft(signal_f[k]) / dt for k in range(signal_f.shape[0])])
+    t = np.arange(signal_t.shape[1]) * dt    
+    chan_labels = ['A', 'E', 'T']
+
+    plt.figure(figsize=(12, 6))
+
+    for k in range(signal_t.shape[0]):
+        plt.plot(t, signal_t[k], label=f'Channel {chan_labels[k]}')
+    plt.title(title)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Strain")
+    plt.legend(loc="upper right")
+    plt.show()
