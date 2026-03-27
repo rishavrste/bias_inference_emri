@@ -44,11 +44,11 @@ class Config:
 
         self.parameter_selected = "extrinsic" #or "extrinsic"
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
-        self.include_noise = False #Whether to include noise in the likelihood evaluations (default False for testing)
+        self.include_noise = True #Whether to include noise in the likelihood evaluations (default False for testing)
 
         self.prior_sigma_range = 20.0  #Default range for uniform prior in PARIS (±20% of center)
 
-        self.basedir = "/scratch/e1583490/emri_without_noise_0"  #Base directory for saving results; can be overridden by --basedir CLI arg
+        self.basedir = "/scratch/e1583490/emri_with_noise_0"  #Base directory for saving results; can be overridden by --basedir CLI arg
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
         self.seed= 42   
 

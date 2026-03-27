@@ -728,7 +728,7 @@ def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
     ip = inner_prod(h_f-signal, h_f-signal, PSD, fixed['delta_f'], xp=cp)
-    return -0.5 * ip 
+    return -0.5 * ip * 20
 
 def to_numpy(arr):
         return arr.get() if hasattr(arr, 'get') else np.asarray(arr)

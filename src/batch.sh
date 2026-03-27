@@ -8,14 +8,14 @@
 #PBS -k oed
 
 # Define log directory and create it if it doesn't exist
-LOG_DIR=/scratch/e1583490/emri_without_noise_0/logs
+LOG_DIR=/scratch/e1583490/emri_with_noise_0/logs
 mkdir -p "$LOG_DIR"
 
 # Redirect all stdout and stderr to our chosen files from this point on
 exec > "$LOG_DIR/paris_inference.out" 2>"$LOG_DIR/paris_inference.err"
 
 cd /home/svu/e1583490/bias_inference_emri/src
-
+module load singularity
 singularity exec --nv -e \
 /app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif \
 bash -lc '
