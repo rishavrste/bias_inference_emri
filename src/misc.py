@@ -212,6 +212,7 @@ def compute_fisher_parallelotope(ctx: dict,
  
     pars_list_com = list(fisher_params) + [ctx['chi2'],additional_kwargs['evolve_1PA'],additional_kwargs['evolve_primary'],
      additional_kwargs['evolve_2PA'],additional_kwargs['deviation_included'],additional_kwargs['dev_1'],additional_kwargs['dev_2']]
+    
     SNR = sef.SNRcalc_SEF(*pars_list_com,**emri_kwargs,use_gpu=use_gpu)
     print("SNR: ", SNR)
     param_dict = {
@@ -390,9 +391,9 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
                     **fixed):
     xp = cp if fixed['use_gpu'] else np
 
-    print(" calculation withoiut noise additoin, using waveform_true_fft_without_noise for signal")
+    print(" calculation with noise addition, using signal+noise")
 
-    signal = fixed['waveform_true_fft_without_noise']
+    signal = fixed['waveform_true_fft']
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
@@ -406,8 +407,8 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
     optimal_snr = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
-    optimal_snr_x = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
-    denom = xp.sqrt(optimal_snr * optimal_snr_x)
+    #optimal_snr_x = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
+    denom = xp.sqrt(optimal_snr)
 
     if (maximize_phase):
         num = inner_prod_without_phase(signal, h_f, PSD, fixed['delta_f'], xp=cp)
@@ -452,7 +453,7 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     if(xp.isnan(snr) or xp.isinf(snr)):
         print(f"[WARN] SNR computation returned {snr}; setting to 0")
         return -np.inf
-    return float(snr) * 10
+    return float(snr) * 50
 
 def timemax_correlation(h1, h2,dt, PSD, xp=np):
 
@@ -610,106 +611,110 @@ def generate_colored_noise(variance_noise_AET, delta_t, seed=0, return_time_doma
         return xp.asarray(noise_freq)
 
 def check_noise_model_consistency(PSD, delta_f, delta_t, n_channels, temp_signal=None, seed=42):
+    try:
+        use_gpu = (xp is cp)
 
-    use_gpu = (xp is cp)
+        # Stack PSD list → 2-D array (n_channels, N_freq), drop DC bin to match
+        # inner_product's internal [:, 1:] slice on the rfft output
+        PSD_array = xp.stack([xp.asarray(PSD[k]) for k in range(n_channels)], axis=0)
+        covariance_noise = [PSD_array[k] / (2 * delta_f) for k in range(n_channels)]
+        rng = xp.random.default_rng(seed)
+        seed_array = rng.integers(0, int(1e6), size=100)
+        noise_realizations = []
 
-    # Stack PSD list → 2-D array (n_channels, N_freq), drop DC bin to match
-    # inner_product's internal [:, 1:] slice on the rfft output
-    PSD_array = xp.stack([xp.asarray(PSD[k]) for k in range(n_channels)], axis=0)
-    covariance_noise = [PSD_array[k] / (2 * delta_f) for k in range(n_channels)]
-    rng = xp.random.default_rng(seed)
-    seed_array = rng.integers(0, int(1e6), size=500)
-    noise_realizations = []
+        for s in seed_array:
+            noise_realizations.append(xp.array(
+                generate_colored_noise(covariance_noise, delta_t, seed=int(s), return_time_domain=True)
+            ))
 
-    for s in seed_array:
-        noise_realizations.append(xp.array(
-            generate_colored_noise(covariance_noise, delta_t, seed=int(s), return_time_domain=True)
-        ))
+        noise_realizations = xp.array(noise_realizations)   # (N_real, n_channels, N_time)
+        N = noise_realizations.shape[-1]
 
-    noise_realizations = xp.array(noise_realizations)   # (N_real, n_channels, N_time)
-    N = noise_realizations.shape[-1]
+        # inner_product does rfft then [:, 1:], so it works on N//2 bins.
+        # Align PSD to exactly those N//2 bins by dropping the DC bin.
+        PSD_for_ip = PSD_array[:, 1 : N // 2 + 1]          # shape (n_channels, N//2)
+        print(f"Length of PSD: {N // 2 + 1}")
 
-    # inner_product does rfft then [:, 1:], so it works on N//2 bins.
-    # Align PSD to exactly those N//2 bins by dropping the DC bin.
-    PSD_for_ip = PSD_array[:, 1 : N // 2 + 1]          # shape (n_channels, N//2)
-    print(f"Length of PSD: {N // 2 + 1}")
+        mean_noise = xp.mean(noise_realizations, axis=0)
+        _to_np = lambda arr: arr.get() if use_gpu else np.asarray(arr)
 
-    mean_noise = xp.mean(noise_realizations, axis=0)
-    _to_np = lambda arr: arr.get() if use_gpu else np.asarray(arr)
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        axes[0].hist(_to_np(mean_noise.flatten()), bins=50, alpha=0.7, color="steelblue")
+        axes[0].axvline(0, color="red", linestyle="--", label="zero")
+        axes[0].set_title("Mean of Noise Realizations\n(should be centred on 0)")
+        axes[0].set_xlabel("Mean Value")
+        axes[0].set_ylabel("Count")
+        axes[0].legend()
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    axes[0].hist(_to_np(mean_noise.flatten()), bins=50, alpha=0.7, color="steelblue")
-    axes[0].axvline(0, color="red", linestyle="--", label="zero")
-    axes[0].set_title("Mean of Noise Realizations\n(should be centred on 0)")
-    axes[0].set_xlabel("Mean Value")
-    axes[0].set_ylabel("Count")
-    axes[0].legend()
 
-    T_sig = N
-    if temp_signal is None:
-        t = xp.linspace(0, N * delta_t, N)
-        temp_signal = xp.array([xp.sin(2 * xp.pi * t) for _ in range(n_channels)])
-    else:
-        T_sig = temp_signal.shape[-1]
-        if T_sig > N:
-            temp_signal = temp_signal[:, :N]
-        elif T_sig < N:
-            pad = xp.zeros((n_channels, N - T_sig), dtype=temp_signal.dtype)
-            temp_signal = xp.concatenate([temp_signal, pad], axis=-1)
+        T_sig = N
+        if temp_signal is None:
+            t = xp.linspace(0, N * delta_t, N)
+            temp_signal = xp.array([xp.sin(2 * xp.pi * t) for _ in range(n_channels)])
+        else:
+            T_sig = temp_signal.shape[-1]
+            if T_sig > N:
+                temp_signal = temp_signal[:, :N]
+            elif T_sig < N:
+                pad = xp.zeros((n_channels, N - T_sig), dtype=temp_signal.dtype)
+                temp_signal = xp.concatenate([temp_signal, pad], axis=-1)
 
-    inner_products = []
-    for noise in noise_realizations:
-        ip = inner_product(noise, temp_signal, PSD_for_ip, delta_t, use_gpu=use_gpu)
-        inner_products.append(float(_to_np(xp.asarray(ip))))
+        inner_products = []
+        for noise in noise_realizations:
+            ip = inner_product(noise, temp_signal, PSD_for_ip, delta_t, use_gpu=use_gpu)
+            inner_products.append(float(_to_np(xp.asarray(ip))))
 
-    inner_products     = xp.array(inner_products)
-    var_inner_product  = float(_to_np(xp.var(inner_products)))
-    mean_inner_product = float(_to_np(xp.mean(inner_products)))
-    aa = float(_to_np(xp.asarray(
-        inner_product(temp_signal, temp_signal, PSD_for_ip, delta_t, use_gpu=use_gpu)
-    )))
-    ratio = var_inner_product / aa if aa != 0 else float("nan")
+        inner_products     = xp.array(inner_products)
+        var_inner_product  = float(_to_np(xp.var(inner_products)))
+        mean_inner_product = float(_to_np(xp.mean(inner_products)))
+        aa = float(_to_np(xp.asarray(
+            inner_product(temp_signal, temp_signal, PSD_for_ip, delta_t, use_gpu=use_gpu)
+        )))
+        ratio = var_inner_product / aa if aa != 0 else float("nan")
 
-    ip_np = _to_np(inner_products)
-    axes[1].hist(ip_np, bins=50, alpha=0.7, color="darkorange", density=True,
-                 label="empirical ⟨n, a⟩")
-    x = np.linspace(ip_np.min(), ip_np.max(), 300)
-    expected_std = np.sqrt(aa)
-    gaussian = np.exp(-0.5 * (x / expected_std) ** 2) / (expected_std * np.sqrt(2 * np.pi))
-    axes[1].plot(x, gaussian, "r-", lw=2, label=f"N(0, ⟨a,a⟩)  σ={expected_std:.3g}")
-    axes[1].axvline(mean_inner_product, color="blue", linestyle="--",
-                    label=f"empirical mean={mean_inner_product:.3g}")
-    axes[1].set_title(
-        f"Inner Product ⟨n, a⟩ Distribution\n"
-        f"sqrt(Var[⟨n,a⟩]={np.sqrt(var_inner_product):.4g}  ⟨a,a⟩={aa:.4g}  ratio={ratio:.4f}"
-    )
-    axes[1].set_xlabel("⟨n, a⟩")
-    axes[1].set_ylabel("Density")
-    axes[1].legend()
-    plt.tight_layout()
-    plt.show()
+        ip_np = _to_np(inner_products)
+        axes[1].hist(ip_np, bins=50, alpha=0.7, color="darkorange", density=True,
+                     label="empirical ⟨n, a⟩")
+        x = np.linspace(ip_np.min(), ip_np.max(), 300)
+        expected_std = np.sqrt(aa)
+        gaussian = np.exp(-0.5 * (x / expected_std) ** 2) / (expected_std * np.sqrt(2 * np.pi))
+        axes[1].plot(x, gaussian, "r-", lw=2, label=f"N(0, ⟨a,a⟩)  σ={expected_std:.3g}")
+        axes[1].axvline(mean_inner_product, color="blue", linestyle="--",
+                        label=f"empirical mean={mean_inner_product:.3g}")
+        axes[1].set_title(
+            f"Inner Product ⟨n, a⟩ Distribution\n"
+            f"sqrt(Var[⟨n,a⟩]={np.sqrt(var_inner_product):.4g}  ⟨a,a⟩={aa:.4g}  ratio={ratio:.4f}"
+        )
+        axes[1].set_xlabel("⟨n, a⟩")
+        axes[1].set_ylabel("Density")
+        axes[1].legend()
+        plt.tight_layout()
+        plt.show()
 
-    print("=" * 55)
-    print("  Noise model consistency check")
-    print("=" * 55)
-    print(f"  Backend                : {'CuPy (GPU)' if use_gpu else 'NumPy (CPU)'}")
-    print(f"  Realizations           : {len(seed_array)}")
-    print(f"  N time samples         : {N}  |  PSD bins passed: {PSD_for_ip.shape[-1]}")
-    print(f"  N (template samples)   : {T_sig}  →  aligned to {N}")
-    print(f"  Max |mean noise|       : {float(_to_np(xp.abs(mean_noise).max())):.4e}  (expect ≈ 0)")
-    print(f"  E[⟨n, a⟩]             : {mean_inner_product:.4e}           (expect ≈ 0)")
-    print(f"  Var[⟨n, a⟩]           : {var_inner_product:.6g}")
-    print(f"  ⟨a, a⟩                : {aa:.6g}")
-    print(f"  Ratio Var/⟨a,a⟩       : {ratio:.6f}          (expect ≈ 1.0)")
-    print("=" * 55)
+        print("=" * 55)
+        print("  Noise model consistency check")
+        print("=" * 55)
+        print(f"  Backend                : {'CuPy (GPU)' if use_gpu else 'NumPy (CPU)'}")
+        print(f"  Realizations           : {len(seed_array)}")
+        print(f"  N time samples         : {N}  |  PSD bins passed: {PSD_for_ip.shape[-1]}")
+        print(f"  N (template samples)   : {T_sig}  →  aligned to {N}")
+        print(f"  Max |mean noise|       : {float(_to_np(xp.abs(mean_noise).max())):.4e}  (expect ≈ 0)")
+        print(f"  E[⟨n, a⟩]             : {mean_inner_product:.4e}           (expect ≈ 0)")
+        print(f"  Var[⟨n, a⟩]           : {var_inner_product:.6g}")
+        print(f"  ⟨a, a⟩                : {aa:.6g}")
+        print(f"  Ratio Var/⟨a,a⟩       : {ratio:.6f}          (expect ≈ 1.0)")
+        print("=" * 55)
 
-    return {
-        "mean_noise":         mean_noise,
-        "inner_products":     inner_products,
-        "var_inner_product":  var_inner_product,
-        "aa":                 aa,
-        "ratio":              ratio,
-    }
+        return {
+            "mean_noise":         mean_noise,
+            "inner_products":     inner_products,
+            "var_inner_product":  var_inner_product,
+            "aa":                 aa,
+            "ratio":              ratio,
+        }
+    except Exception as e:
+        print(f"[ERROR] Noise model consistency check failed: {e}")
+        return None
 
 def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
@@ -728,7 +733,7 @@ def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
     ip = inner_prod(h_f-signal, h_f-signal, PSD, fixed['delta_f'], xp=cp)
-    return -0.5 * ip * 20
+    return -0.5 * ip * 10
 
 def to_numpy(arr):
         return arr.get() if hasattr(arr, 'get') else np.asarray(arr)
