@@ -765,7 +765,7 @@ def run_paris(ndim: int,
 
     try:
         sampler.run_sampling(
-            num_iterations=1000,
+            num_iterations=800,
             savepath=savepath,
             print_iter=100,
             external_lhs_points=external_lhs_points,
