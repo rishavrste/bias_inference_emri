@@ -1,14 +1,15 @@
 #!/bin/bash
 #PBS -P CFP03-CF-051
-#PBS -N paris_inference
-#PBS -l walltime=17:00:00
+#PBS -N imri_0pa_diff
+#PBS -l walltime=14:00:00
 #PBS -l select=1:ngpus=1
 #PBS -o /dev/null
 #PBS -e /dev/null
 #PBS -k oed
 
 # Define log directory and create it if it doesn't exist
-LOG_DIR=/scratch/e1583490/emri_with_noise_dev_a_1_batch_sigma_75/logs_9
+LOG_DIR=/scratch/e1583490/less_less_imri_with_noise_0/logs_$(date +%Y%m%d_%H%M%S)
+#LOG_DIR=/scratch/e1583490/less_less_imri_with_noise_dev_a_0/logs_$(date +%Y%m%d_%H%M%S)
 mkdir -p "$LOG_DIR"
 
 # Redirect all stdout and stderr to our chosen files from this point on

@@ -232,14 +232,14 @@ def compute_fisher_parallelotope(ctx: dict,
     'Phi_r0': fisher_params[13]}
 
     Fisher = sef(wave_params = param_dict,param_names=param_names, add_param_args=additional_kwargs,
-            live_dangerously = False, stability_plot = True,der_order = 6, Ndelta = 12,
+            live_dangerously = False, stability_plot = False,der_order = 6, Ndelta = 12,
             )
                    
     try:
         F = np.asarray(Fisher, dtype=float)
         print(f"[FISHER] {repr(F)}")
         print(f"[FISHER_IS_PD] {_is_pos_def(F)}")
-        F_inv = np.linalg.inv(F)
+        F_inv = fishinv(param_dict['m1'], Fisher, index_of_M=0)
         print(f"[FISHER_INV] {repr(F_inv)}")
         print(f"[FISHER_INV_IS_PD] {_is_pos_def(F_inv)}")
         F_std = np.sqrt(np.diag(F_inv))
@@ -453,7 +453,7 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     if(xp.isnan(snr) or xp.isinf(snr)):
         print(f"[WARN] SNR computation returned {snr}; setting to 0")
         return -np.inf
-    return float(snr) * 50
+    return float(snr)
 
 def timemax_correlation(h1, h2,dt, PSD, xp=np):
 
@@ -733,7 +733,7 @@ def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
     ip = inner_prod(h_f-signal, h_f-signal, PSD, fixed['delta_f'], xp=cp)
-    return -0.5 * ip * 200
+    return -0.5 * ip 
 
 def to_numpy(arr):
         return arr.get() if hasattr(arr, 'get') else np.asarray(arr)
@@ -754,3 +754,12 @@ def plot_time_series_from_fft(signal_f, dt, title="Time Series"):
     plt.ylabel("Strain")
     plt.legend(loc="upper right")
     plt.show()
+
+def fishinv(M, Fisher, index_of_M=0):
+    J = np.eye(len(Fisher))
+    J[index_of_M, index_of_M] = M
+
+    Fisher_lnM = J.T @ Fisher @ J
+    Fisher_lnM_inv = np.linalg.inv(Fisher_lnM)  # Jacobian for Covariance = partial new/partial old, going from lnM -> M
+    Fisher_inv = J.T @ Fisher_lnM_inv @ J
+    return Fisher_inv

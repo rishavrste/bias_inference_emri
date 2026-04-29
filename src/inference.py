@@ -27,10 +27,6 @@ from stableemrifisher.fisher import StableEMRIFisher
 import matplotlib.pyplot as plt
 
 from config_paris import Config, ObjectiveTracker
-# from misc import  _clip_physical_params_intrinsic,compute_fft_with_windowing, calculate_detection_snr_0pa_vs_1pa, \
-#     compute_fisher_parallelotope,covariance_from_fisher_parallelotope,inner_prod,load_startingpoint_param_array,\
-#         calculate_time_max_0pa_vs_1pa,calculate_detection_overlap_0pa_vs_1pa,chi2_match,plot_time_series_from_fft,add_noise_func,check_noise_model_consistency
-
 from misc import *
 try:
     import cupy as cp
@@ -207,6 +203,7 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
     dev_2 = add_kwargs.get('dev_2')
     dt = emri_kwargs['dt']
     T=emri_kwargs['T']
+    noise= None
 
     wave_params = [
         m1, m2, a, p0, e0, Y0,
@@ -255,7 +252,7 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
     if add_noise:
         waveform_true_fft_without_noise = compute_fft_with_windowing(waveform_true, dt, N_fiducial, use_gpu=use_gpu, n_channels=3)
         plot_time_series_from_fft(waveform_true_fft_without_noise, dt, title="True Waveform without Noise (Time Domain)")
-        waveform_true_fft,_ = add_noise_func(waveform_true_fft_without_noise,PSD_funcs_,delta_f, dt,n_channels= 3,seed=cfg.seed)
+        waveform_true_fft,noise = add_noise_func(waveform_true_fft_without_noise,PSD_funcs_,delta_f, dt,n_channels= 3,seed=cfg.seed)
         print("[INFO] Added noise to true waveform FFT\n")
         print("shape of waveform_true_fft after noise addition:", xp.shape(waveform_true_fft))
         plot_time_series_from_fft(waveform_true_fft, dt, title="True Waveform with Noise (Time Domain)")
@@ -285,6 +282,7 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
         'delta_f': freq[1]-freq[0],
         'freq': freq,
         'noise_dict': noise_dict if add_noise else None,
+        'noise': noise if add_noise else None,
     }
 
 def objective_factory(target_func: str,
@@ -765,7 +763,7 @@ def run_paris(ndim: int,
 
     try:
         sampler.run_sampling(
-            num_iterations=800,
+            num_iterations=cfg.paris_niterations,
             savepath=savepath,
             print_iter=100,
             external_lhs_points=external_lhs_points,
@@ -956,7 +954,7 @@ def main():
                     # # Nelder–Mead minimizes; convert larger-is-better score to loss
                     score_val = objective(theta)
                     return -float(score_val)
-
+                print(f"Starting Nelder-Mead optimization with initial theta: {theta0}")
                 result = nelder_mead_optimize(
                     theta0,
                     bounded_objective,
@@ -1105,9 +1103,12 @@ def main():
                 diag_sigma = fisher_meta['diag_sigma']
                 bounds = []
                 for i in range(len(diag_sigma)):
-                    bounds.append((theta_ref[i] - diag_sigma[i], theta_ref[i] + diag_sigma[i]))
+                    bounds.append((theta_ref[i] - diag_sigma[i]*cfg.prior_sigma_range, theta_ref[i] + diag_sigma[i]*cfg.prior_sigma_range))
 
-                   
+                print("Fisher-based bounds for optimization:")
+                for i, (lower, upper) in enumerate(bounds):
+                    print(f"  {cfg.param_names_to_infer[i]}: [{lower:.6e}, {upper:.6e}]")
+
                 def bounded_objective(theta: np.ndarray) -> float:
                     # denom = np.abs(theta_ref) #+ 1e-30
                     # rel = np.abs(np.asarray(theta) - theta_ref) / denom

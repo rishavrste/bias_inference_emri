@@ -13,18 +13,16 @@ class Config:
     
         # Target SNR for Fisher scaling
       #  self._TARGET_SNR = 20.0
-        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0','dev_1','dev_2']  #Default parameters to infer; can be overridden by --params CLI arg
+        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0']  #Default parameters to infer; can be overridden by --params CLI arg
 
 
-        # self.params = np.array([1.00000000e+06,  1.00000000e+04,  9.00000000e-01,2.85813146e+01,5.00000000e-01,1.00000000e+00,3.31765439e+01,  1.04719755e+₀,  7.85398163e-₀1,
-        # 6.28318531e-₀1,  5.23598776e-₀1,  1.₀₀₀₀₀₀₀₀e-₀¹,2.₀₀₀₀₀₀₀₀e-₀¹,  3.₀₀₀₀₀₀₀₀e-₀¹])
-        self.params = np.array([1e6,1e1,0.9, 7.5,  5.00000000e-01,  1.00000000e+00,
-          5.0,  np.pi/4,  1.0, 1,  np.pi/3,  9.00000000e-01,
-         5.00000000e-01,  4.00000000e-01])
+        # self.params = np.array([1e6,1e1,0.9, 7.5,  5.00000000e-01,  1.00000000e+00,
+        #   5.0,  np.pi/4,  1.0, 1,  np.pi/3,  9.00000000e-01,
+        #  5.00000000e-01,  4.00000000e-01])
 
-        # self.params = np.array([1e6,5e3,0.70, 25.0,  0.25,  1.00000000e+00,
-        #   3,  np.pi/4,  1.0, 1,  np.pi/3,  9.00000000e-01,
-        #   5.00000000e-01,  4.00000000e-01])
+        self.params = np.array([1e6,5e3,0.70, 25.0,  0.25,  1.00000000e+00,
+          3,  np.pi/4,  1.0, 1,  np.pi/3,  9.00000000e-01,
+          5.00000000e-01,  4.00000000e-01])
         
         # [m1, m2, a, p0, e0, xI0, dist, qS, phiS, qK, phiK, Phi_phi0, Phi_theta0, Phi_r0,\
         #      chi2,evolve_1PA,evolve_primary,evolve_2PA,deviation_included,dev_0_p,dev_0_e,dev_1_p,dev_1_e,dev_2_p,dev_2_e]
@@ -33,37 +31,40 @@ class Config:
                          "Phi_phi0","Phi_theta0","Phi_r0"]
         
         self.dt = 10  #Time step for waveform generation; default 0.1s
-        self.T= 1.0
+        self.T= 0.25
 
-        self.chi2 = 0.0  #it was 0.95 
+        self.chi2 = 0.95  #0.95
         
         self.dev_1 = 0.0
         self.dev_2 = 0.0
 
-        self.spread_scale = 0.1 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
+        self.spread_scale = 0.5 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
         self.grid_index = 0.0  #Default to 0; can be overridden by $GRID_INDEX env var or --grid-index CLI arg
-        self.nm_xatol = 1e-2  #tol for Nelder-Mead; set high to disable
+        self.nm_xatol = 1e-6  #tol for Nelder-Mead; set high to disable
         self.using_evec = False  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
-        self.seed_cloud = 200  #Number of initial unit-cube seeds for PARIS around center
-        self.paris_seed_n = 99
-        self.nm_fatol = 1e-3  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.de_maxiter = 1200  #Max iterations for differential evolution; default 1000
-        self.nm_maxiter = 15000  #Max iterations for differential evolution; default 1000
-        self.target_func = 'chi2_match'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match','chi2_match'
-        self.optimizer = 'paris'  # nelder-mead or paris or differential_evolution
-        # self.signal_param_array = np.array([])  #To be loaded from file or defined in code
-        self.startingpoints = "/scratch/e1583490/emri_with_noise_dev_a_1_batch_sigma_75/differential_evolution_optimal_snr_run_id_6/starting_point_7.npy"  #Default path for starting points; can be overridden by --startingpoints CLI arg
+        self.seed_cloud = 200  #Number of initial unit-cuxwbe seeds for PARIS around center
+        #self.paris_seed_n = 99
+        self.paris_seed_n = 10
+        self.paris_niterations = 30000  #Number of PARIS iterations; default 1000
+
+        self.nm_fatol = 1e-6  #Absolute function tolerance for Nelder-Mead; default 0.01
+        self.de_maxiter = 1500  #Max iterations for differential evolution; default 1000
+        self.nm_maxiter = 20000  #Max iterations for differential evolution; default 1000
+        self.target_func = 'optimal_snr'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match','chi2_match'
+        self.optimizer = 'differential_evolution'  # nelder-mead or paris or differential_evolution
+        self.startingpoints = "/scratch/e1583490/less_less_imri_with_noise_0/differential_evolution_optimal_snr_run_id_2/starting_point_3.npy"  #Default path for starting points; can be overridden by --startingpoints CLI arg
         # self.analytic_model = '1PA'  #Analytic model to use for waveform generation; default SHOULD BE NONE
         self.analytic_model = None  #Analytic model to use for waveform generation; default SHOULD BE NONE
 
+
         self.parameter_selected = "extrinsic" #or "extrinsic"
-        self.run_type = "0pa_vs_1pa_dev" # or "0pa_vs_1pa_dev"
-        self.include_noise = True #Whether to include noise in the likelihood evaluations (default False for testing)
+        self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
+        self.include_noise = True # Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 3000  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 10.0  #Default range for uniform prior in PARIS (±20% of center)
 
-        self.basedir = "/scratch/e1583490/emri_with_noise_dev_a_1_batch_sigma_75/"  #Base directory for saving results; can be overridden by --basedir CLI arg
-        self.output_text_file = "paris_optimization_results_8.txt"  #File to save optimization results in text format
+        self.basedir = "/scratch/e1583490/less_less_imri_with_noise_0/"  #Base directory for saving results; can be overridden by --basedir CLI arg
+        self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
         self.seed= 42   
 
         self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
