@@ -56,67 +56,6 @@ def _is_pos_def(mat: np.ndarray) -> bool:
     except np.linalg.LinAlgError:
         return False
 
-def check_and_clip_prior(priors_range, param_names):
-    """Check that prior ranges are consistent with physical bounds and reference values.
-    Make sure the param_names are decorated with the same pattern as in the reference dict (e.g., 'm1', 'm2', 'a', etc.) for proper checking."""
-
-    # --- Physical bounds ---
-    EMRI_param_ranges = {
-        "m1": (0, None),
-        "m2": (0, None),
-        "a": (-0.999, 0.999),
-        "p0": (0, None),
-        "e0": (0, 1),
-        "xI0": (-1, 1),
-        "dist": (0, None),
-        "qS": (-np.pi, np.pi),
-        "phiS": (-np.pi, np.pi),
-        "qK": (-np.pi, np.pi),
-        "phiK": (-np.pi, np.pi),
-        "Phi_phi0": (-np.pi, np.pi),
-        "Phi_theta0": (-np.pi, np.pi),
-        "Phi_r0": (-np.pi, np.pi),
-    }
-
-    # --- Angular width limits ---
-    angular_width_limits = {
-        "phiS": 2*np.pi,
-        "phiK": 2*np.pi,
-        "Phi_phi0": 2*np.pi,
-        "Phi_theta0": 2*np.pi,
-        "Phi_r0": 2*np.pi,
-        "qS": 2*np.pi,
-        "qK": 2*np.pi,
-    }
-
-    checked_ranges = []
-
-    for i, base_name in enumerate(param_names):
-        low, high = priors_range[i]
-
-        # Enforcing physical bounds without circular bound
-        if base_name in EMRI_param_ranges:
-            ref_low, ref_high = EMRI_param_ranges[base_name]
-
-            if base_name not in angular_width_limits:
-                if ref_low is not None:
-                    low = max(low, ref_low)
-                if ref_high is not None:
-                    high = min(high, ref_high)
-
-        # Angular Widths
-        if base_name in angular_width_limits:
-            max_width = angular_width_limits[base_name]
-            width = high - low
-
-            if width > max_width:
-                center = 0.5 * (low + high)
-                low = center - 0.5 * max_width
-                high = center + 0.5 * max_width
-
-        checked_ranges.append([low, high])
-    return checked_ranges
-
 
 def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
     """Clip mapped physical parameters to minimal physical ranges.
@@ -175,17 +114,18 @@ def compute_fisher_parallelotope(ctx: dict,
         waveform_response = build_waveform_response(T=ctx['T'], dt=ctx['dt'], use_gpu=use_gpu)
 
     
-    
     param_names = params_to_infer
     nchannels = ctx["waveform_true_fft"].shape[0]
     if nchannels == 3:
         tdi_chan = "AET"
-        noise_kwargs = [{"sens_fn": ch} for ch in channels]
         channels = [A2TDISens, E2TDISens, T2TDISens]
+        noise_kwargs = [{"sens_fn": ch} for ch in channels]
+        
     elif nchannels == 2:
         tdi_chan = "AE"
-        noise_kwargs = [{"sens_fn": ch} for ch in channels[:2]]
         channels = [A2TDISens, E2TDISens]
+        noise_kwargs = [{"sens_fn": ch} for ch in channels[:2]]
+
     else:
         raise ValueError(f"Unsupported number of channels: {nchannels}. Expected 2 (A,E) or 3 (A,E,T).")
 
@@ -737,6 +677,7 @@ def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
                     **fixed):
     xp = cp if fixed['use_gpu'] else np
     signal = fixed['waveform_true_fft']
+    nchannels = signal.shape[0]
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
@@ -744,9 +685,9 @@ def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
                'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
-    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
-    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=nchannels)
     ip = inner_prod(h_f-signal, h_f-signal, PSD, fixed['delta_f'], xp=cp)
     return -0.5 * ip 
 

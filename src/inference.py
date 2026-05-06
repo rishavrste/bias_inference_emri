@@ -42,7 +42,6 @@ _PARIS_REF_CENTER = None          # type: Optional[np.ndarray]
 _PARIS_SPREAD_SCALE = None        # type: Optional[float]
 _PARIS_OBJECTIVE = None           # type: Optional[callable]
 _PARIS_TARGET_KIND = None         # type: Optional[str]  # 'optimal_snr', 'optimal_snr_phase_max', 'phase_match', 'time_max'
-# _PARIS_EARLY_STOP_HIT = False
 _TARGET_SNR = None
 # Fisher-parallelotope affine prior (primary for this script)
 _PARIS_AFFINE_CENTER = None       # type: Optional[np.ndarray]
@@ -314,8 +313,9 @@ def objective_factory(target_func: str,
             'waveform_true_fft': ctx['waveform_true_fft'],
             'xp': np,'delta_f': ctx['delta_f'],
             'use_gpu': bool(use_gpu_for_snr),
+            'nchannels': ctx['waveform_true_fft'].shape[0],
         }
-
+    nchannels = ctx['waveform_true_fft'].shape[0]
     def score_optimal_snr(theta: np.ndarray) -> float:
         if only_intrinsic_params == True:
             if infer_deviation_included == False:
@@ -520,10 +520,16 @@ def objective_factory(target_func: str,
     Omega2_SI = Omega_phi_1PA_interp / Msec
     f_gw = m_mode * Omega2_SI / (2.0 * np.pi)
     w = np.zeros_like(f_gw)
-    for ch in (A2TDISens, E2TDISens, T2TDISens):
-        Sn = get_sensitivity(f_gw, sens_fn=ch)
-        Sn = np.maximum(Sn, 1e-60)
-        w += 1.0 / Sn
+    if nchannels == 3:
+        for ch in (A2TDISens, E2TDISens, T2TDISens):
+            Sn = get_sensitivity(f_gw, sens_fn=ch)
+            Sn = np.maximum(Sn, 1e-60)
+            w += 1.0 / Sn
+    elif nchannels == 2:
+        for ch in (A2TDISens, E2TDISens):
+            Sn = get_sensitivity(f_gw, sens_fn=ch)
+            Sn = np.maximum(Sn, 1e-60)
+            w += 1.0 / Sn
     add_kwargs["evolve_1PA"] = False
     if analytic_model == '1PA':
                     add_kwargs['evolve_1PA'] = True
