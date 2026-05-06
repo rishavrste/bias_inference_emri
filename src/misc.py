@@ -11,7 +11,6 @@ import numpy as np
 from lisatools.sensitivity import get_sensitivity, A2TDISens, E2TDISens, T2TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
-from stableemrifisher.utils import generate_PSD, inner_product
 
 from fastlisaresponse import ResponseWrapper
 from lisatools.detector import EqualArmlengthOrbits
