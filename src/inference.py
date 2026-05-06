@@ -21,7 +21,7 @@ from few.utils.constants import MTSUN_SI
 
 from fastlisaresponse import ResponseWrapper
 from lisatools.detector import EqualArmlengthOrbits
-from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
+from lisatools.sensitivity import get_sensitivity, A2TDISens, E2TDISens, T2TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
 import matplotlib.pyplot as plt
@@ -179,7 +179,7 @@ def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> Respo
     print("[INFO] Finished loading modules and building ResponseWrapper")
     return response
 
-def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs: dict,add_noise: bool=False, use_gpu: bool = False,seed: Optional[int] = 0) -> dict:
+def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs: dict,add_noise: bool=False, use_gpu: bool = False,seed: Optional[int] = 0,nchannels: int = 3) -> dict:
     """
     Build fiducial 1PA waveform, PSD, and FFT from a signal parameter row.
     signal_row columns:
@@ -213,11 +213,16 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
     # emri_kwargs = {"T": T, "dt": dt, 'chi2': chi2, 'evolve_1PA': evolve_1PA, 'evolve_primary': evolve_primary,
     #                 'evolve_2PA': evolve_2PA,'deviation_included': deviation_included,'dev_1': dev_1, 'dev_2': dev_2}
 
-    waveform_true = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    waveform_true = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     print("[INFO] Finished generating true waveform")
     
-    channels = [A1TDISens, E1TDISens, T1TDISens]
-    noise_kwargs = [{"sens_fn": ch} for ch in channels]
+    channels = [A2TDISens, E2TDISens, T2TDISens]
+    if nchannels == 3:
+        noise_kwargs = [{"sens_fn": ch} for ch in channels]
+    elif nchannels == 2:
+        noise_kwargs = [{"sens_fn": ch} for ch in channels[:2]]
+    else:
+        raise ValueError(f"Unsupported number of channels: {nchannels}. Only 2 (A,E) or 3 (A,E,T) are supported.")
     PSD_funcs = generate_PSD(
         waveform=waveform_true,
         dt=dt,
@@ -250,18 +255,18 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
     print(f"freq_max: {freq[-1]:.6f} Hz and Freq_min: {freq[1]:.6f} Hz")
 
     if add_noise:
-        waveform_true_fft_without_noise = compute_fft_with_windowing(waveform_true, dt, N_fiducial, use_gpu=use_gpu, n_channels=3)
+        waveform_true_fft_without_noise = compute_fft_with_windowing(waveform_true, dt, N_fiducial, use_gpu=use_gpu, n_channels=nchannels)
         plot_time_series_from_fft(waveform_true_fft_without_noise, dt, title="True Waveform without Noise (Time Domain)")
-        waveform_true_fft,noise = add_noise_func(waveform_true_fft_without_noise,PSD_funcs_,delta_f, dt,n_channels= 3,seed=cfg.seed)
+        waveform_true_fft,noise = add_noise_func(waveform_true_fft_without_noise,PSD_funcs_,delta_f, dt,n_channels= nchannels,seed=cfg.seed)
         print("[INFO] Added noise to true waveform FFT\n")
         print("shape of waveform_true_fft after noise addition:", xp.shape(waveform_true_fft))
         plot_time_series_from_fft(waveform_true_fft, dt, title="True Waveform with Noise (Time Domain)")
-        noise_dict = check_noise_model_consistency(PSD_funcs_,delta_f,dt,n_channels=3,temp_signal=waveform_true,seed=seed)
+        noise_dict = check_noise_model_consistency(PSD_funcs_,delta_f,dt,n_channels=nchannels,temp_signal=waveform_true,seed=seed)
         print(f"Noise consistency check results: {noise_dict}")
         
     else:
         print("[INFO] No noise added to true waveform FFT\n")
-        waveform_true_fft = compute_fft_with_windowing(waveform_true, dt, N_fiducial, use_gpu=use_gpu, n_channels=3)
+        waveform_true_fft = compute_fft_with_windowing(waveform_true, dt, N_fiducial, use_gpu=use_gpu, n_channels=nchannels)
         waveform_true_fft_without_noise = xp.copy(waveform_true_fft)  # Keep a copy of the clean FFT for later use
     
     print("[INFO] Finished preparing true waveform (GPU)")
@@ -462,7 +467,7 @@ def objective_factory(target_func: str,
                 add_kwargs['deviation_included'] = True
                 val = chi2_match(
                     m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],qS,phiS, ctx['qK'], ctx['phiK'], 
-                    ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_kwargs,
+                    Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,
                     **fixed)
                # print(val, 'param', repr(theta))
                 
@@ -515,7 +520,7 @@ def objective_factory(target_func: str,
     Omega2_SI = Omega_phi_1PA_interp / Msec
     f_gw = m_mode * Omega2_SI / (2.0 * np.pi)
     w = np.zeros_like(f_gw)
-    for ch in (A1TDISens, E1TDISens, T1TDISens):
+    for ch in (A2TDISens, E2TDISens, T2TDISens):
         Sn = get_sensitivity(f_gw, sens_fn=ch)
         Sn = np.maximum(Sn, 1e-60)
         w += 1.0 / Sn
@@ -534,7 +539,10 @@ def objective_factory(target_func: str,
                 add_kwargs['dev_1'] = dev_1
                 add_kwargs['dev_2'] = dev_2
                 add_kwargs['deviation_included'] = True
-                add_kwargs['evolve_1PA'] = False
+                if analytic_model == '1PA':
+                    add_kwargs['evolve_1PA'] = True
+                else:
+                    add_kwargs['evolve_1PA'] = False
         else:
             print("For entrinsic parameters, phase metric is not supported. Returning inf.")
             assert False, "For entrinsic parameters, phase metric is not supported. Returning inf."
@@ -791,6 +799,7 @@ def main():
     dev_1 = cfg.dev_1
     dev_2 = cfg.dev_2
     analytic_model = cfg.analytic_model
+    nchannels = cfg.nchannels
     
     startingpoints = cfg.startingpoints
     # Example: extract a digit (or number) before a known pattern
@@ -809,7 +818,7 @@ def main():
 
     # if target_func in ('optimal_snr', 'optimal_snr_phase_max','time_max'):
         
-    ctx = prepare_true_waveform(signal_param_array, emri_kwargs, add_kwargs,add_noise=cfg.include_noise, use_gpu=True,seed=cfg.seed)
+    ctx = prepare_true_waveform(signal_param_array, emri_kwargs, add_kwargs,add_noise=cfg.include_noise, use_gpu=True,seed=cfg.seed,nchannels=nchannels)
 
     snr_2 = inner_prod(ctx['waveform_true_fft_without_noise'], ctx['waveform_true_fft_without_noise'], ctx['PSD_funcs'], ctx['delta_f'], xp=xp)
     #if hasattribute get u

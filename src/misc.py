@@ -8,14 +8,13 @@ from scipy.signal.windows import tukey
 import numpy as np
 
 # FEW / waveform & noise
-from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
+from lisatools.sensitivity import get_sensitivity, A2TDISens, E2TDISens, T2TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
 from stableemrifisher.utils import generate_PSD, inner_product
 
 from fastlisaresponse import ResponseWrapper
 from lisatools.detector import EqualArmlengthOrbits
-from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from few.waveform import GenerateEMRIWaveform
 from few.waveform.waveform import SuperKludgeWaveform
 import matplotlib.pyplot as plt
@@ -175,10 +174,21 @@ def compute_fisher_parallelotope(ctx: dict,
     else:
         waveform_response = build_waveform_response(T=ctx['T'], dt=ctx['dt'], use_gpu=use_gpu)
 
-    channels = [A1TDISens, E1TDISens, T1TDISens]
-    noise_kwargs = [{"sens_fn": ch} for ch in channels]
+    
+    
     param_names = params_to_infer
-    fisher_params = fisher_params
+    nchannels = ctx["waveform_true_fft"].shape[0]
+    if nchannels == 3:
+        tdi_chan = "AET"
+        noise_kwargs = [{"sens_fn": ch} for ch in channels]
+        channels = [A2TDISens, E2TDISens, T2TDISens]
+    elif nchannels == 2:
+        tdi_chan = "AE"
+        noise_kwargs = [{"sens_fn": ch} for ch in channels[:2]]
+        channels = [A2TDISens, E2TDISens]
+    else:
+        raise ValueError(f"Unsupported number of channels: {nchannels}. Expected 2 (A,E) or 3 (A,E,T).")
+
 
     sef = StableEMRIFisher(waveform_class=SuperKludgeWaveform,
                        waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=False, odd_len=True)),
@@ -197,7 +207,7 @@ def compute_fisher_parallelotope(ctx: dict,
                                                     force_backend = "cuda12x" if use_gpu else "cpu",
                                                     order=20,
                                                     tdi="2nd generation",
-                                                    tdi_chan="AET"),
+                                                    tdi_chan=tdi_chan),
                        stats_for_nerds = True, use_gpu = use_gpu,
                        deriv_type='stable',
                        noise_model=get_sensitivity,
@@ -403,9 +413,12 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
                'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
     
-    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    nchannels = signal.shape[0]
+    
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
-    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=nchannels)
     optimal_snr = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
     #optimal_snr_x = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
     denom = xp.sqrt(optimal_snr)
@@ -436,9 +449,10 @@ def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK,
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
                'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
-    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    nchannels = signal.shape[0]
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
-    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=nchannels)
     optimal_snr = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
     denom = xp.sqrt(optimal_snr)
 
@@ -485,14 +499,15 @@ def calculate_time_max_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
                'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
-    h = xp.array(waveform_response(*wave_params, **emri_kwargs))
+    nchannels = signal.shape[0]
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
-    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=3)
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=nchannels)
     Y = xp.zeros_like(h_f)
-    for i in range(2):
+    for i in range(nchannels):
         Y[i,1:] = h_f[i,1:] * xp.conj(signal[i,1:]) / (0.5 * PSD[i,1:])  # Avoid DC component
     # IFFT to time domain with proper normalization
-    S =xp.array([xp.fft.irfft(Y[i]) / fixed['dt'] for i in range(2)])
+    S =xp.array([xp.fft.irfft(Y[i]) / fixed['dt'] for i in range(nchannels)])
     # Return maximum correlation
     if (xp.max(xp.abs(S)) is xp.nan or xp.max(xp.abs(S)) is xp.inf):
         print(f"[WARN] Time-max correlation computation returned {xp.max(xp.abs(S))}; setting to 0")

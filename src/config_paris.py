@@ -38,32 +38,34 @@ class Config:
         self.dev_1 = 0.0
         self.dev_2 = 0.0
 
-        self.spread_scale = 0.5 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
+        self.nchannels = 3  #Number of TDI channels to use (default 3 for A, E, T)
+
+        self.spread_scale = 0.2 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
         self.grid_index = 0.0  #Default to 0; can be overridden by $GRID_INDEX env var or --grid-index CLI arg
         self.nm_xatol = 1e-6  #tol for Nelder-Mead; set high to disable
         self.using_evec = False  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
         self.seed_cloud = 200  #Number of initial unit-cuxwbe seeds for PARIS around center
-        #self.paris_seed_n = 99
-        self.paris_seed_n = 10
-        self.paris_niterations = 30000  #Number of PARIS iterations; default 1000
+        self.paris_seed_n = 99
+        # self.paris_seed_n = 10
+        self.paris_niterations = 4000  #Number of PARIS iterations; default 1000
 
         self.nm_fatol = 1e-6  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.de_maxiter = 1500  #Max iterations for differential evolution; default 1000
+        self.de_maxiter = 2000  #Max iterations for differential evolution; default 1000
         self.nm_maxiter = 20000  #Max iterations for differential evolution; default 1000
         self.target_func = 'optimal_snr'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match','chi2_match'
-        self.optimizer = 'differential_evolution'  # nelder-mead or paris or differential_evolution
-        self.startingpoints = "/scratch/e1583490/less_less_imri_with_noise_0/differential_evolution_optimal_snr_run_id_2/starting_point_3.npy"  #Default path for starting points; can be overridden by --startingpoints CLI arg
-        # self.analytic_model = '1PA'  #Analytic model to use for waveform generation; default SHOULD BE NONE
-        self.analytic_model = None  #Analytic model to use for waveform generation; default SHOULD BE NONE
+        self.optimizer = 'paris'  # nelder-mead or paris or differential_evolution
+        self.startingpoints = "starting_point_imri_old_0.npy"  #Default path for starting points; can be overridden by --startingpoints CLI arg
+        self.analytic_model = '1PA'  #Analytic model to use for waveform generation; default SHOULD BE NONE
+        # self.analytic_model = None  #Analytic model to use for waveform generation; default SHOULD BE NONE
 
 
         self.parameter_selected = "extrinsic" #or "extrinsic"
         self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
         self.include_noise = True # Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 10.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 7.0  #Default range for uniform prior in PARIS (±20% of center)
 
-        self.basedir = "/scratch/e1583490/less_less_imri_with_noise_0/"  #Base directory for saving results; can be overridden by --basedir CLI arg
+        self.basedir = "/scratch/e1583490/2nd_gen_tdi/imri_1_PA/"  #Base directory for saving results; can be overridden by --basedir CLI arg
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
         self.seed= 42   
 
