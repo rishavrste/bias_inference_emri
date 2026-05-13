@@ -8,7 +8,7 @@ from scipy.signal.windows import tukey
 import numpy as np
 
 # FEW / waveform & noise
-from lisatools.sensitivity import get_sensitivity, A2TDISens, E2TDISens, T2TDISens
+from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
 
@@ -117,12 +117,12 @@ def compute_fisher_parallelotope(ctx: dict,
     nchannels = ctx["waveform_true_fft"].shape[0]
     if nchannels == 3:
         tdi_chan = "AET"
-        channels = [A2TDISens, E2TDISens, T2TDISens]
+        channels = [A1TDISens, E1TDISens, T1TDISens]
         noise_kwargs = [{"sens_fn": ch} for ch in channels]
         
     elif nchannels == 2:
         tdi_chan = "AE"
-        channels = [A2TDISens, E2TDISens]
+        channels = [A1TDISens, E1TDISens]
         noise_kwargs = [{"sens_fn": ch} for ch in channels[:2]]
 
     else:
@@ -145,7 +145,7 @@ def compute_fisher_parallelotope(ctx: dict,
                                                     orbits=EqualArmlengthOrbits(use_gpu=use_gpu),
                                                     force_backend = "cuda12x" if use_gpu else "cpu",
                                                     order=20,
-                                                    tdi="2nd generation",
+                                                    tdi="1st generation",
                                                     tdi_chan=tdi_chan),
                        stats_for_nerds = True, use_gpu = use_gpu,
                        deriv_type='stable',
@@ -573,7 +573,7 @@ def check_noise_model_consistency(PSD, delta_f, delta_t, n_channels, temp_signal
         PSD_array = xp.stack([xp.asarray(PSD[k]) for k in range(n_channels)], axis=0)
         covariance_noise = [PSD_array[k] / (2 * delta_f) for k in range(n_channels)]
         rng = xp.random.default_rng(seed)
-        seed_array = rng.integers(0, int(1e6), size=100)
+        seed_array = rng.integers(0, int(1e6), size=200)
         noise_realizations = []
 
         for s in seed_array:
@@ -709,6 +709,9 @@ def plot_time_series_from_fft(signal_f, dt, title="Time Series"):
     plt.ylabel("Strain")
     plt.legend(loc="upper right")
     plt.show()
+
+import numpy as np
+
 
 def fishinv(M, Fisher, index_of_M=0):
     J = np.eye(len(Fisher))

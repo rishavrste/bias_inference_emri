@@ -21,7 +21,7 @@ from few.utils.constants import MTSUN_SI
 
 from fastlisaresponse import ResponseWrapper
 from lisatools.detector import EqualArmlengthOrbits
-from lisatools.sensitivity import get_sensitivity, A2TDISens, E2TDISens, T2TDISens
+from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
 import matplotlib.pyplot as plt
@@ -153,7 +153,7 @@ def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> Respo
     waveform_model = GenerateEMRIWaveform(SuperKludgeWaveform, sum_kwargs=sum_kwargs, return_list=False,use_gpu=use_gpu)
 
     t0 = 10000.0
-    tdi_gen = "2nd generation"
+    tdi_gen = "1st generation"
     order = 20
     index_lambda = 8  # phiS
     index_beta = 7    # qS
@@ -215,7 +215,7 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
     waveform_true = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     print("[INFO] Finished generating true waveform")
     
-    channels = [A2TDISens, E2TDISens, T2TDISens]
+    channels = [A1TDISens, E1TDISens, T1TDISens]
     if nchannels == 3:
         noise_kwargs = [{"sens_fn": ch} for ch in channels]
     elif nchannels == 2:
@@ -521,12 +521,12 @@ def objective_factory(target_func: str,
     f_gw = m_mode * Omega2_SI / (2.0 * np.pi)
     w = np.zeros_like(f_gw)
     if nchannels == 3:
-        for ch in (A2TDISens, E2TDISens, T2TDISens):
+        for ch in (A1TDISens, E1TDISens, T1TDISens):
             Sn = get_sensitivity(f_gw, sens_fn=ch)
             Sn = np.maximum(Sn, 1e-60)
             w += 1.0 / Sn
     elif nchannels == 2:
-        for ch in (A2TDISens, E2TDISens):
+        for ch in (A1TDISens, E1TDISens):
             Sn = get_sensitivity(f_gw, sens_fn=ch)
             Sn = np.maximum(Sn, 1e-60)
             w += 1.0 / Sn
