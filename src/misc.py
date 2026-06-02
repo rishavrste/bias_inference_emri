@@ -110,7 +110,9 @@ def compute_fisher_parallelotope(ctx: dict,
     if 'waveform_response' in ctx and ctx['waveform_response'] is not None:
         waveform_response = ctx['waveform_response']
     else:
-        waveform_response = build_waveform_response(T=ctx['T'], dt=ctx['dt'], use_gpu=use_gpu)
+        print("forward model not found in context; building waveform_response wrapper")
+        exit(1)
+       # waveform_response = build_waveform_response(T=ctx['T'], dt=ctx['dt'], use_gpu=use_gpu)
 
     
     param_names = params_to_infer
@@ -362,6 +364,11 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
     #optimal_snr_x = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
     denom = xp.sqrt(optimal_snr)
 
+    # #---remove these lines"
+    # h_signal = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
+    # denom = denom * xp.sqrt(h_signal)
+
+
     if (maximize_phase):
         num = inner_prod_without_phase(signal, h_f, PSD, fixed['delta_f'], xp=cp)
     else:  
@@ -373,7 +380,7 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
         print(f"[WARN] overlap computation returned {snr}; setting to 0")
         return -np.inf
     # print(snr)
-    return float(snr) 
+    return float(snr)
 
 def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,

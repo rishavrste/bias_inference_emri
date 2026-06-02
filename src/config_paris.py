@@ -12,60 +12,59 @@ class Config:
     def __init__(self, **kwargs):
     
         # Target SNR for Fisher scaling
-      #  self._TARGET_SNR = 20.0
-        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'qS', 'phiS', 'Phi_phi0', 'Phi_r0','dev_1','dev_2']  #Default parameters to infer; can be overridden by --params CLI arg
-
-
-        self.params = np.array([1e6,1e1,0.9, 7.5,  5.00000000e-01,  1.00000000e+00,
-          5.0,  np.pi/4,  1.0, 1,  np.pi/3,  9.00000000e-01,
-         5.00000000e-01,  4.00000000e-01])
+        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']  #Default parameters to infer; can be overridden by --params CLI arg
+        self.params_name = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
+                         "Phi_phi0","Phi_theta0","Phi_r0"]
+        
+        self.params = np.array([1.00000000e+06, 1.00000000e+01, 5.00000000e-01, 1.00469014e+01,
+1.00000000e-01, 1.00000000e+00, 3.87879918e+00, 1.04719755e+00,
+7.85398163e-01, 6.28318531e-01, 5.23598776e-01, 1.00000000e-01,
+2.00000000e-01, 3.00000000e-01]
+)
 
         # self.params = np.array([1e6,5e3,0.70, 25.0,  0.25,  1.00000000e+00,
         #   3,  np.pi/4,  1.0, 1,  np.pi/3,  9.00000000e-01,
         #   5.00000000e-01,  4.00000000e-01])
         
-        # [m1, m2, a, p0, e0, xI0, dist, qS, phiS, qK, phiK, Phi_phi0, Phi_theta0, Phi_r0,\
-        #      chi2,evolve_1PA,evolve_primary,evolve_2PA,deviation_included,dev_0_p,dev_0_e,dev_1_p,dev_1_e,dev_2_p,dev_2_e]
-        
-        self.params_name = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
-                         "Phi_phi0","Phi_theta0","Phi_r0"]
-        
         self.dt = 10  #Time step for waveform generation; default 0.1s
-        self.T= 1.0
+        # self.dt = 5  #Time step for waveform generation; default 0.1s
+        # self.T= 1.0
+        self.T= 2.5
 
-        self.chi2 = 0.0  #0.95
+        # self.chi2 = 0.0  #0.95
+        self.chi2 = 0.95  #0.95
         
         self.dev_1 = 0.0
         self.dev_2 = 0.0
 
         self.nchannels = 3  #Number of TDI channels to use (default 3 for A, E, T)
 
-        self.spread_scale = 0.2 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
+        self.spread_scale = 0.4 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
         self.grid_index = 0.0  #Default to 0; can be overridden by $GRID_INDEX env var or --grid-index CLI arg
         self.nm_xatol = 1e-6  #tol for Nelder-Mead; set high to disable
         self.using_evec = False  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
         self.seed_cloud = 200  #Number of initial unit-cuxwbe seeds for PARIS around center
-        self.paris_seed_n = 99
+        self.paris_seed_n = 100
         # self.paris_seed_n = 10
         self.paris_niterations = 4000  #Number of PARIS iterations; default 1000
 
         self.nm_fatol = 1e-6  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.de_maxiter = 500  #Max iterations for differential evolution; default 1000
+        self.de_maxiter = 1000  #Max iterations for differential evolution; default 1000
         self.nm_maxiter = 10000  #Max iterations for differential evolution; default 1000
         self.target_func = 'optimal_snr'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match','chi2_match'
-        self.optimizer = 'nelder-mead'  # nelder-mead or paris or differential_evolution
-        self.startingpoints = "/scratch/e1583490/emri_with_noise_dev_a_1_batch_sigma_75/0pa/1gen_tdi/nelder_mead_optimal_snr_run_id_11/starting_point_12.npy"  #Default path for starting points; can be overridden by --startingpoints CLI arg
+        self.optimizer = 'differential_evolution'  # nelder-mead or paris or differential_evolution
+        self.startingpoints = "/scratch/e1583490/miaoxin_point/differential_evolution_optimal_snr_run_id_2/starting_point_3.npy"  #Default path for starting points; can be overridden by --startingpoints CLI arg
         # self.analytic_model = '1PA'  #Analytic model to use for waveform generation; default SHOULD BE NONE
         self.analytic_model = None  #Analytic model to use for waveform generation; default SHOULD BE NONE
 
 
-        self.parameter_selected = "extrinsic" #or "extrinsic"
-        self.run_type = "0pa_vs_1pa_dev" # or "0pa_vs_1pa_dev"
+        self.parameter_selected = "intrinsic" #or "extrinsic","intrinsic"
+        self.run_type = "0pa_vs_1pa" # or "0pa_vs_1pa_dev"
         self.include_noise = True # Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 3.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 100.0  #Default range for uniform prior in PARIS (±20% of center)
 
-        self.basedir = "/scratch/e1583490/emri_with_noise_dev_a_1_batch_sigma_75/0pa/1gen_tdi/"  #Base directory for saving results; can be overridden by --basedir CLI arg
+        self.basedir = "/scratch/e1583490/emri_5_params/"  #Base directory for saving results; can be overridden by --basedir CLI arg
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
         self.seed= 42   
 

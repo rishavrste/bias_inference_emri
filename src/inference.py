@@ -34,7 +34,6 @@ try:
 except:
     xp=np
     print("CuPy not found, using NumPy instead. For GPU acceleration, please install CuPy.")
-
 # -----------------------------
 # PARIS global context (picklable functions require module scope)
 # -----------------------------..l
@@ -172,8 +171,7 @@ def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> Respo
         force_backend = "cuda12x" if use_gpu else "cpu",
         order=order,
         tdi=tdi_gen,
-        tdi_chan="AET",
-    )
+        tdi_chan="AET")
 
     print("[INFO] Finished loading modules and building ResponseWrapper")
     return response
@@ -193,11 +191,11 @@ def prepare_true_waveform(signal_row: np.ndarray, emri_kwargs: dict, add_kwargs:
     waveform_response = build_waveform_response(T=emri_kwargs['T'], dt=emri_kwargs['dt'], use_gpu=use_gpu)
 
     chi2 = add_kwargs.get('chi2')
-    deviation_included = add_kwargs.get('deviation_included', True)
+    deviation_included = add_kwargs.get('deviation_included', False)
     add_kwargs['evolve_1PA'] = True
     evolve_1PA = add_kwargs['evolve_1PA']
     evolve_primary = add_kwargs.get('evolve_primary', False)
-    evolve_2PA = add_kwargs.get('evolve_2PA',False)
+    evolve_2PA = add_kwargs.get('evolve_2PA',True)
     dev_1 = add_kwargs.get('dev_1')
     dev_2 = add_kwargs.get('dev_2')
     dt = emri_kwargs['dt']
