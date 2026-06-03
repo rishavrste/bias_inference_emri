@@ -43,7 +43,7 @@ class Config:
         self.run_type = "0pa_vs_2pa" # "0pa_vs_2pa", "1pa_vs_2pa"
         self.include_noise = False # Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 35.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 25.0  #Default range for uniform prior in PARIS (±20% of center)
 
         self.basedir = "/scratch/e1583490/SuperKludege_Optimizations/IMRI/"
 

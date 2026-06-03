@@ -708,7 +708,9 @@ def main(signal_param_array,
             theta0 = np.array([starting_point['m1'], starting_point['m2'], starting_point['a'], starting_point['p0'], starting_point['e0']], dtype=float)
         else:
             theta0 = np.array([ctx['m1'], ctx['m2'], ctx['a'], ctx['p0'], ctx['e0']], dtype=float)
-        
+        add_kwargs['evolve_1PA']=False
+        add_kwargs['evolve_2PA']=False
+
         initial_overlap =calculate_detection_overlap(
                     m1=starting_point['m1'], m2=starting_point['m2'], a=starting_point['a'], p0=starting_point['p0'], e0=starting_point['e0'], Y0=ctx['Y0'], dist=ctx['dist'], qS=ctx['qS'], phiS=ctx['phiS'], qK=ctx['qK'], phiK=ctx['phiK'],
                     Phi_phi0=ctx['Phi_phi0'], Phi_theta0=ctx['Phi_theta0'], Phi_r0=ctx['Phi_r0'], add_kwargs=add_kwargs,

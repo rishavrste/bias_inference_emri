@@ -8,7 +8,7 @@ from scipy.signal.windows import tukey
 import numpy as np
 
 # FEW / waveform & noise
-from lisatools.sensitivity import get_sensitivity, A1TDISens, E1TDISens, T1TDISens
+from lisatools.sensitivity import get_sensitivity, A2TDISens, E2TDISens, T2TDISens
 from stableemrifisher.utils import generate_PSD, inner_product
 from stableemrifisher.fisher import StableEMRIFisher
 
@@ -119,12 +119,12 @@ def compute_fisher_parallelotope(ctx: dict,
     nchannels = ctx["waveform_true_fft"].shape[0]
     if nchannels == 3:
         tdi_chan = "AET"
-        channels = [A1TDISens, E1TDISens, T1TDISens]
+        channels = [A2TDISens, E2TDISens, T2TDISens]
         noise_kwargs = [{"sens_fn": ch} for ch in channels]
         
     elif nchannels == 2:
         tdi_chan = "AE"
-        channels = [A1TDISens, E1TDISens]
+        channels = [A2TDISens, E2TDISens]
         noise_kwargs = [{"sens_fn": ch} for ch in channels[:2]]
 
     else:
@@ -147,7 +147,7 @@ def compute_fisher_parallelotope(ctx: dict,
                                                     orbits=EqualArmlengthOrbits(use_gpu=use_gpu),
                                                     force_backend = "cuda12x" if use_gpu else "cpu",
                                                     order=20,
-                                                    tdi="1st generation",
+                                                    tdi="2nd generation",
                                                     tdi_chan=tdi_chan),
                        stats_for_nerds = True, use_gpu = use_gpu,
                        deriv_type='stable',
@@ -162,7 +162,7 @@ def compute_fisher_parallelotope(ctx: dict,
     emri_kwargs = {"T":ctx['T'], "dt":ctx['dt']}
  
     pars_list_com = list(fisher_params) + [ctx['chi2'],additional_kwargs['evolve_1PA'],additional_kwargs['evolve_primary'],
-     additional_kwargs['evolve_2PA'],additional_kwargs['deviation_included'],additional_kwargs['dev_1'],additional_kwargs['dev_2']]
+     additional_kwargs['evolve_2PA']]
     
     SNR = sef.SNRcalc_SEF(*pars_list_com,**emri_kwargs,use_gpu=use_gpu)
     print("SNR: ", SNR)
@@ -348,11 +348,10 @@ def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
-                    add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+                    add_kwargs['evolve_2PA']]
     
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
-                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
-               'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA']}
     
     nchannels = signal.shape[0]
     
@@ -391,10 +390,9 @@ def calculate_detection_snr(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
-                    add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+                    add_kwargs['evolve_2PA']]
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
-                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
-               'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA']}
     nchannels = signal.shape[0]
     h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
@@ -441,10 +439,9 @@ def calculate_time_max(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
-                    add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+                    add_kwargs['evolve_2PA']]
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
-                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
-               'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA']}
     nchannels = signal.shape[0]
     h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
@@ -687,10 +684,9 @@ def chi2_match(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs['chi2'],add_kwargs['evolve_1PA'],add_kwargs['evolve_primary'],
-                    add_kwargs['evolve_2PA'], add_kwargs['deviation_included'],add_kwargs['dev_1'],add_kwargs['dev_2']]
+                    add_kwargs['evolve_2PA']]
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
-                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA'],'deviation_included': add_kwargs['deviation_included'],
-               'dev_1': add_kwargs['dev_1'], 'dev_2': add_kwargs['dev_2']}
+                    'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA']}
     h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=nchannels)
