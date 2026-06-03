@@ -379,7 +379,7 @@ def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
         print(f"[WARN] overlap computation returned {snr}; setting to 0")
         return -np.inf
     # print(snr)
-    return float(snr)
+    return float(snr) * 100
 
 def calculate_detection_snr(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,

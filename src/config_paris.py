@@ -28,10 +28,10 @@ class Config:
         self.grid_index = 0.0  #Default to 0; can be overridden by $GRID_INDEX env var or --grid-index CLI arg
         self.nm_xatol = 1e-6  #tol for Nelder-Mead; set high to disable
         self.using_evec = False  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
-        self.seed_cloud = 200  #Number of initial unit-cuxwbe seeds for PARIS around center
+        self.seed_cloud = 200  #Number of initial unit-cube seeds for PARIS around center
         self.paris_seed_n = 100
         # self.paris_seed_n = 10
-        self.paris_niterations = 1000  #Number of PARIS iterations; default 1000
+        self.paris_niterations = 2000  #Number of PARIS iterations; default 1000
 
         self.nm_fatol = 1e-6  #Absolute function tolerance for Nelder-Mead; default 0.01
         self.de_maxiter = 1000  #Max iterations for differential evolution; default 1000
@@ -43,7 +43,7 @@ class Config:
         self.run_type = "0pa_vs_2pa" # "0pa_vs_2pa", "1pa_vs_2pa"
         self.include_noise = False # Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 25.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 28.0  #Default range for uniform prior in PARIS (±20% of center)
 
         self.basedir = "/scratch/e1583490/SuperKludege_Optimizations/IMRI/"
 
