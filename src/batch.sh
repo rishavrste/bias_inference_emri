@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -P CFP03-CF-051
 #PBS -N 0pa_vs_2pa
-#PBS -l walltime=8:00:00
+#PBS -l walltime=48:00:00
 #PBS -l select=1:ngpus=1:mem=250gb
 #PBS -o /dev/null
 #PBS -e /dev/null

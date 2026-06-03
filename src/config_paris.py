@@ -18,8 +18,8 @@ class Config:
         self.param_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/signal_parameter_array_IMRI.npy"
         self.result_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/result_parameter_array_IMRI.npy"
         self.TYPE = "IMRI"   #IMRI or IMRI_phase
-        self.start_index = 0
-        self.end_index =  1
+        self.start_index = 1
+        self.end_index =  15
 
 
         self.nchannels = 2  #Number of TDI channels to use (default 3 for A, E, T)
