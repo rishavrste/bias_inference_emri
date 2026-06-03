@@ -1382,6 +1382,7 @@ def main(signal_param_array,
 
 if __name__ == "__main__":
     cfg = Config()
+    print("Start")
 
     file_folder = cfg.param_file
     parameter_array =  np.load(file_folder)

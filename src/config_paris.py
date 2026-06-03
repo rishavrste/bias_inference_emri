@@ -45,7 +45,7 @@ class Config:
 
         self.prior_sigma_range = 35.0  #Default range for uniform prior in PARIS (±20% of center)
 
-        self.basedir = "scratch/e1583490/SuperKludege_Optimizations/IMRI/"
+        self.basedir = "/scratch/e1583490/SuperKludege_Optimizations/IMRI/"
 
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
         self.seed= 42   
