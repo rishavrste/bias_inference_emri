@@ -33,9 +33,9 @@ __all__ = [
     "compute_fft_with_windowing",
     "add_noise_func",
     # Analysis & metrics
-    "calculate_detection_snr_0pa_vs_1pa",
-    "calculate_detection_overlap_0pa_vs_1pa",
-    "calculate_time_max_0pa_vs_1pa",
+    "calculate_detection_snr",
+    "calculate_detection_overlap",
+    "calculate_time_max",
     "chi2_match",
     "inner_prod",
     # Fisher
@@ -336,7 +336,7 @@ def inner_prod_without_phase(signal_1_f, signal_2_f, PSD, delta_f, xp=np):
 
 
 #use detection SNR and also use max phase if phase_max is True
-def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
                     maximize_phase=False,
                     **fixed):
@@ -382,7 +382,7 @@ def calculate_detection_overlap_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS,
     # print(snr)
     return float(snr)
 
-def calculate_detection_snr_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+def calculate_detection_snr(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
                     maximize_phase=False,
                     **fixed):
@@ -433,7 +433,7 @@ def timemax_correlation(h1, h2,dt, PSD, xp=np):
     return  xp.max(xp.abs(S))
 
 
-def calculate_time_max_0pa_vs_1pa(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
+def calculate_time_max(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
                     **fixed):
     xp = cp if fixed['use_gpu'] else np
