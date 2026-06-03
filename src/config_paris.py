@@ -17,7 +17,7 @@ class Config:
                          "Phi_phi0","Phi_theta0","Phi_r0"]
         self.param_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/signal_parameter_array_IMRI.npy"
         self.result_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/result_parameter_array_IMRI.npy"
-        self.TYPE = "IMRI"
+        self.TYPE = "IMRI"   #IMRI or IMRI_phase
         self.start_index = 0
         self.end_index =  1
 

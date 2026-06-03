@@ -38,7 +38,7 @@ except:
     print("CuPy not found, using NumPy instead. For GPU acceleration, please install CuPy.")
 # -----------------------------
 # PARIS global context (picklable functions require module scope)
-# -----------------------------..l
+# -----------------------------
 _PARIS_REF_CENTER = None          # type: Optional[np.ndarray]
 _PARIS_SPREAD_SCALE = None        # type: Optional[float]
 _PARIS_OBJECTIVE = None           # type: Optional[callable]
@@ -878,7 +878,7 @@ def main(signal_param_array,
                     case 7:
                         print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0): {result.x}")
                         result_array = starting_point.copy()
-                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'Phi_phi0','Phi_r0']
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0']
                         for i, key in enumerate(starting_point_keys):
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
@@ -888,7 +888,7 @@ def main(signal_param_array,
                     case 8:
                         print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2): {result.x}")
                         result_array = starting_point.copy()
-                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'Phi_phi0','Phi_r0','chi2']
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0','e0', 'Phi_phi0','Phi_r0','chi2']
                         for i, key in enumerate(starting_point_keys):
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
@@ -1042,7 +1042,7 @@ def main(signal_param_array,
                     case 7:
                         print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0): {result.x}")
                         result_array = starting_point.copy()
-                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'Phi_phi0','Phi_r0']
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0']
                         for i, key in enumerate(starting_point_keys):
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
@@ -1052,7 +1052,7 @@ def main(signal_param_array,
                     case 8:
                         print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2): {result.x}")
                         result_array = starting_point.copy()
-                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'Phi_phi0','Phi_r0','chi2']
+                        starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0','chi2']
                         for i, key in enumerate(starting_point_keys):
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
@@ -1309,41 +1309,40 @@ def main(signal_param_array,
                             np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
                             np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
                         case 6:
-                            print(f"Optimized (m1, m2, a, p0, e0, chi2): {result.x}")
+                            print(f"Optimized (m1, m2, a, p0, e0, chi2): {best_theta}")
                             result_array = starting_point.copy()
                             starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2']
                             for i, key in enumerate(starting_point_keys):
-                                result_array[key] = result.x[i]
+                                result_array[key] = best_theta[i]
                             print(f"Optimized parameters as array: {result_array}")
                             np.save(os.path.join(idx_dir, f"results_paris_{timestamp}.npy"), result_array)
                             np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
 
                         case 7:
-                            print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0): {result.x}")
+                            print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0): {best_theta}")
                             result_array = starting_point.copy()
-                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'Phi_phi0','Phi_r0']
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0']
                             for i, key in enumerate(starting_point_keys):
-                                result_array[key] = result.x[i]
+                                result_array[key] = best_theta[i]
                             print(f"Optimized parameters as array: {result_array}")
                             np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
                             np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
 
                         case 8:
-                            print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2): {result.x}")
+                            print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2): {best_theta}")
                             result_array = starting_point.copy()
-                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'Phi_phi0','Phi_r0','chi2']
+                            starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0','chi2']
                             for i, key in enumerate(starting_point_keys):
-                                result_array[key] = result.x[i]
+                                result_array[key] = best_theta[i]
                             print(f"Optimized parameters as array: {result_array}")
                             np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
                             np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
 
                         case _:
-                            print(f"Optimized parameters: {result.x}")
+                            print(f"Optimized parameters: {best_theta}")
 
 
             add_kwargs['chi2']=result_array['chi2']
-        
 
 
             final_overlap = calculate_detection_overlap(
@@ -1438,7 +1437,7 @@ if __name__ == "__main__":
                            include_noise =include_noise,
                            prior_sigma_range = prior_sigma_range,    
                            using_evec = using_evec,
-                           paris_conf=paris_conf,seed=seed
+                           paris_conf=paris_conf,seed=seed,
                            cfg = cfg)
         result = list(result_dict.values())
         result_array[i] = result
