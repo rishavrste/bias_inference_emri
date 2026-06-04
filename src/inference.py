@@ -672,7 +672,8 @@ def main(signal_param_array,
         include_noise,
         prior_sigma_range,using_evec,
         paris_conf,
-        seed,cfg, use_gpu=True):
+        seed,cfg, use_gpu=True,
+        cache_dir=None, grid_index=None):
     
 
     timestamp = time.strftime('%Y%m%d-%H%M%S')
@@ -690,6 +691,9 @@ def main(signal_param_array,
     
     emri_kwargs = {"T": T, "dt": dt,'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': True}
     add_kwargs = {'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': True}
+    # Fisher is always computed at 2PA (the true signal), independent of the
+    # template PA order used in the optimisation objective.
+    fisher_add_kwargs = {'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': True}
         
     ctx = prepare_true_waveform(signal_param_array, emri_kwargs, add_kwargs,add_noise=include_noise, use_gpu=use_gpu,seed=seed,nchannels=n_channels)
 
@@ -959,10 +963,11 @@ def main(signal_param_array,
                     use_gpu=USE_GPU,
                     prior_sigma_range=float(prior_sigma_range),
                     using_evec=using_evec,
-                    additional_kwargs=add_kwargs,
+                    additional_kwargs=fisher_add_kwargs,
                     _TARGET_SNR= _TARGET_SNR,
-                    build_waveform_response= build_waveform_response
-
+                    build_waveform_response= build_waveform_response,
+                    cache_dir=cache_dir,
+                    cache_index=grid_index,
                 )
                 diag_sigma = fisher_meta['diag_sigma']
                 bounds = []
@@ -1129,10 +1134,11 @@ def main(signal_param_array,
                     use_gpu=USE_GPU,
                     prior_sigma_range=float(prior_sigma_range),
                     using_evec=using_evec,
-                    additional_kwargs=add_kwargs,
+                    additional_kwargs=fisher_add_kwargs,
                     _TARGET_SNR= _TARGET_SNR,
-                    build_waveform_response= build_waveform_response
-
+                    build_waveform_response= build_waveform_response,
+                    cache_dir=cache_dir,
+                    cache_index=grid_index,
                 )
                 print("Fisher parallelotope computed successfully.")
                 fisher_ok = True
@@ -1232,6 +1238,8 @@ def main(signal_param_array,
                     print("Unsupported Type")
 
 
+            ndim_local = len(best_theta)
+
             Qp, bp, _ = compute_fisher_parallelotope(
                        ctx=ctx,
                     params_to_infer= param_names_to_infer,
@@ -1239,7 +1247,7 @@ def main(signal_param_array,
                     use_gpu=USE_GPU,
                     prior_sigma_range=float(prior_sigma_range),
                     using_evec=using_evec,
-                    additional_kwargs=add_kwargs,
+                    additional_kwargs=fisher_add_kwargs,
                         _TARGET_SNR= _TARGET_SNR,
                     build_waveform_response= build_waveform_response
                 )
@@ -1249,7 +1257,6 @@ def main(signal_param_array,
             )
 
             rng = np.random.default_rng()
-            ndim_local = len(best_theta)
 
             for _ in range(500):
                 step = rng.multivariate_normal(
@@ -1443,10 +1450,12 @@ if __name__ == "__main__":
                            n_channels = nchannels,
                            startingpoints_file=starting_point_file,
                            include_noise =include_noise,
-                           prior_sigma_range = prior_sigma_range,    
+                           prior_sigma_range = prior_sigma_range,
                            using_evec = using_evec,
                            paris_conf=paris_conf,seed=seed,
-                           cfg = cfg)
+                           cfg = cfg,
+                           cache_dir=os.path.join(cfg.fisher_cache_dir, cfg.TYPE),
+                           grid_index=i)
         result = list(result_dict.values())
         result_array[i] = result
         np.save(result_folder,result_array)

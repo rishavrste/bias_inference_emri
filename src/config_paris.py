@@ -10,47 +10,64 @@ import time
 class Config:
 
     def __init__(self, **kwargs):
-    
-        # Target SNR for Fisher scaling
-        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']  #Default parameters to infer; can be overridden by --params CLI arg
+
+        # --- Identity / run type (must be defined before any derived values) ---
+        self.TYPE = "EMRI"          # IMRI | EMRI | IMRI_TAIL
+        self.run_type = "0pa_vs_2pa"  # "0pa_vs_2pa" | "1pa_vs_2pa"
+        self.parameter_selected = "intrinsic"  # "intrinsic" | "intrinsic_phase"
+
+        # --- Parameters to infer / differentiate in Fisher ---
+        # chi2 (secondary spin) included only for 1PA runs where it is a free parameter.
+        if self.run_type == '1pa_vs_2pa':
+            self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2']
+        else:
+            self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']
         self.params_name = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
                          "Phi_phi0","Phi_theta0","Phi_r0"]
-        self.param_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/signal_parameter_array_IMRI.npy"
-        self.result_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/result_parameter_array_IMRI.npy"
-        self.TYPE = "IMRI"   #IMRI or IMRI_phase
-        self.start_index = 1
-        self.end_index =  15
 
+        # --- Data paths ---
+        self.param_files = {
+            'IMRI':      '/scratch/josh.mat/opt_grid/signal_parameter_array_IMRI.npy',
+            'EMRI':      '/scratch/josh.mat/opt_grid/signal_parameter_array_EMRI.npy',
+            'IMRI_TAIL': '/scratch/josh.mat/opt_grid/signal_parameter_array_IMRI_TAIL.npy',
+        }
+        self.result_files = {
+            'IMRI':      '/scratch/josh.mat/opt_grid/result_parameter_array_IMRI.npy',
+            'EMRI':      '/scratch/josh.mat/opt_grid/result_parameter_array_EMRI.npy',
+            'IMRI_TAIL': '/scratch/josh.mat/opt_grid/result_parameter_array_IMRI_TAIL.npy',
+        }
+        self.param_file  = self.param_files[self.TYPE]
+        self.result_file = self.result_files[self.TYPE]
+        self.basedir = f"/scratch/josh.mat/opt_grid/results/{self.TYPE}/"
+        self.fisher_cache_dir = "/scratch/josh.mat/opt_grid/fisher_cache/"
 
-        self.nchannels = 2  #Number of TDI channels to use (default 3 for A, E, T)
+        # --- Grid range ---
+        self.start_index = 0
+        self.end_index =  1
 
-        self.spread_scale = 0.4 #Multiplicative spread for PARIS prior band (e.g., 0.1 => ±10%)
-        self.grid_index = 0.0  #Default to 0; can be overridden by $GRID_INDEX env var or --grid-index CLI arg
-        self.nm_xatol = 1e-6  #tol for Nelder-Mead; set high to disable
-        self.using_evec = False  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
-        self.seed_cloud = 200  #Number of initial unit-cube seeds for PARIS around center
+        # --- Observation / TDI ---
+        self.nchannels = 2  # 2: A,E only  3: A,E,T
+
+        # --- Optimizer / sampler settings ---
+        self.spread_scale = 0.4
+        self.grid_index = 0.0
+        self.nm_xatol = 1e-6
+        self.using_evec = False
+        self.seed_cloud = 200
         self.paris_seed_n = 100
-        # self.paris_seed_n = 10
-        self.paris_niterations = 2000  #Number of PARIS iterations; default 1000
+        self.paris_niterations = 2000
+        self.nm_fatol = 1e-6
+        self.de_maxiter = 1000
+        self.nm_maxiter = 10000
+        self.target_func = 'optimal_snr'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
+        self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
+        self.include_noise = False
+        self.prior_sigma_range = 28.0
 
-        self.nm_fatol = 1e-6  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.de_maxiter = 1000  #Max iterations for differential evolution; default 1000
-        self.nm_maxiter = 10000  #Max iterations for differential evolution; default 1000
-        self.target_func = 'optimal_snr'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match','chi2_match'
-        self.optimizer = 'paris'  # nelder-mead or paris or differential_evolution
-
-        self.parameter_selected = "intrinsic" #or "intrinsic_phase","intrinsic"
-        self.run_type = "0pa_vs_2pa" # "0pa_vs_2pa", "1pa_vs_2pa"
-        self.include_noise = False # Whether to include noise in the likelihood evaluations (default False for testing)
-
-        self.prior_sigma_range = 28.0  #Default range for uniform prior in PARIS (±20% of center)
-
-        self.basedir = "/scratch/e1583490/SuperKludege_Optimizations/IMRI/"
-
-        self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
-        self.seed= 42   
-
-        self.use_gpu = True  #Whether to use GPU acceleration (default False for testing)
+        # --- Misc ---
+        self.output_text_file = "paris_optimization_results.txt"
+        self.seed = 42
+        self.use_gpu = True
     
     def check_initialization(self):
     # Check if extrinsic sky parameters are included

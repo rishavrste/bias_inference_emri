@@ -104,7 +104,9 @@ def compute_fisher_parallelotope(ctx: dict,
                                  use_gpu: bool = True,
                                  _TARGET_SNR: float = None,
                                  prior_sigma_range: float = 20,
-                                 using_evec: bool = False) -> Tuple[np.ndarray, np.ndarray, dict]:
+                                 using_evec: bool = False,
+                                 cache_dir: Optional[str] = None,
+                                 cache_index: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, dict]:
     """Build Fisher-based local prior around ``theta0``.
 
     When ``using_evec`` is True we recover the original Fisher ellipsoid (axes
@@ -141,66 +143,101 @@ def compute_fisher_parallelotope(ctx: dict,
         raise ValueError(f"Unsupported number of channels: {nchannels}. Expected 2 (A,E) or 3 (A,E,T).")
 
 
-    sef = StableEMRIFisher(waveform_class=SuperKludgeWaveform,
-                       waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=False, odd_len=True)),
-                       waveform_generator = GenerateEMRIWaveform,
-                       waveform_generator_kwargs= dict(return_list=False),
-                       ResponseWrapper=ResponseWrapper,
-                       ResponseWrapper_kwargs = dict(Tobs=ctx['T'],
-                                                    t0=10000.0,
-                                                    dt=ctx['dt'],
-                                                    index_lambda=8,
-                                                    index_beta=7,
-                                                    flip_hx=True,
-                                                    is_ecliptic_latitude=False,
-                                                    remove_garbage="zero",
-                                                    orbits=EqualArmlengthOrbits(use_gpu=use_gpu),
-                                                    force_backend = "cuda12x" if use_gpu else "cpu",
-                                                    order=20,
-                                                    tdi="2nd generation",
-                                                    tdi_chan=tdi_chan),
-                       stats_for_nerds = True, use_gpu = use_gpu,
-                       deriv_type='stable',
-                       noise_model=get_sensitivity,
-                       noise_kwargs=noise_kwargs,
-                       channels=channels,
-                       T = ctx['T'], dt = ctx['dt'],
-                       stability_plot = False,
-                       der_order = 6, Ndelta = 12,
-                       plunge_check=True, return_derivatives=False
-                       )
-    emri_kwargs = {"T":ctx['T'], "dt":ctx['dt']}
- 
-    pars_list_com = list(fisher_params) + [ctx['chi2'],additional_kwargs['evolve_1PA'],additional_kwargs['evolve_primary'],
-     additional_kwargs['evolve_2PA']]
-    
-    SNR = sef.SNRcalc_SEF(*pars_list_com,**emri_kwargs,use_gpu=use_gpu)
-    print("SNR: ", SNR)
-    param_dict = {
-    'm1': fisher_params[0],
-    'm2': fisher_params[1],
-    'a': fisher_params[2],
-    'p0': fisher_params[3],
-    'e0': fisher_params[4],
-    'xI0': fisher_params[5],
-    'dist': fisher_params[6],
-    'qS': fisher_params[7],
-    'phiS': fisher_params[8],
-    'qK': fisher_params[9],
-    'phiK': fisher_params[10],
-    'Phi_phi0': fisher_params[11],
-    'Phi_theta0': fisher_params[12],
-    'Phi_r0': fisher_params[13]}
+    # --- Fisher cache ---
+    # Cache stores the raw Fisher matrix F and template snr_model before any SNR scaling.
+    # The scale factor (_TARGET_SNR / snr_model)^2 is applied at runtime after loading.
+    F = None
+    snr_model = None
+    cache_path = None
+    if cache_dir is not None and cache_index is not None:
+        if additional_kwargs.get('evolve_2PA'):
+            pa_tag = '2pa'
+        elif additional_kwargs.get('evolve_1PA'):
+            pa_tag = '1pa'
+        else:
+            pa_tag = '0pa'
+        params_tag = '_'.join(params_to_infer)
+        cache_path = os.path.join(cache_dir, f"fisher_{cache_index:04d}_{pa_tag}_{params_tag}.npy")
+        if os.path.exists(cache_path):
+            cached = np.load(cache_path, allow_pickle=True).item()
+            F = np.asarray(cached['F'], dtype=float)
+            snr_model = float(cached['snr_model'])
+            print(f"[FISHER] Loaded from cache: {cache_path}")
 
-    Fisher = sef(wave_params = param_dict,param_names=param_names, add_param_args=additional_kwargs,
-            live_dangerously = False, stability_plot = False,der_order = 6, Ndelta = 12,
-            )
-                   
-    try:
+    if F is None:
+        sef = StableEMRIFisher(waveform_class=SuperKludgeWaveform,
+                           waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=False, odd_len=True)),
+                           waveform_generator = GenerateEMRIWaveform,
+                           waveform_generator_kwargs= dict(return_list=False),
+                           ResponseWrapper=ResponseWrapper,
+                           ResponseWrapper_kwargs = dict(Tobs=ctx['T'],
+                                                        t0=10000.0,
+                                                        dt=ctx['dt'],
+                                                        index_lambda=8,
+                                                        index_beta=7,
+                                                        flip_hx=True,
+                                                        is_ecliptic_latitude=False,
+                                                        remove_garbage="zero",
+                                                        orbits=EqualArmlengthOrbits(use_gpu=use_gpu),
+                                                        force_backend = "cuda12x" if use_gpu else "cpu",
+                                                        order=20,
+                                                        tdi="2nd generation",
+                                                        tdi_chan=tdi_chan),
+                           stats_for_nerds = True, use_gpu = use_gpu,
+                           deriv_type='stable',
+                           noise_model=get_sensitivity,
+                           noise_kwargs=noise_kwargs,
+                           channels=channels,
+                           T = ctx['T'], dt = ctx['dt'],
+                           stability_plot = False,
+                           der_order = 6, Ndelta = 12,
+                           plunge_check=True, return_derivatives=False
+                           )
+        emri_kwargs = {"T":ctx['T'], "dt":ctx['dt']}
+
+        pars_list_com = list(fisher_params) + [ctx['chi2'],additional_kwargs['evolve_1PA'],additional_kwargs['evolve_primary'],
+         additional_kwargs['evolve_2PA']]
+
+        SNR = sef.SNRcalc_SEF(*pars_list_com,**emri_kwargs,use_gpu=use_gpu)
+        print("SNR: ", SNR)
+        param_dict = {
+        'm1': fisher_params[0],
+        'm2': fisher_params[1],
+        'a': fisher_params[2],
+        'p0': fisher_params[3],
+        'e0': fisher_params[4],
+        'xI0': fisher_params[5],
+        'dist': fisher_params[6],
+        'qS': fisher_params[7],
+        'phiS': fisher_params[8],
+        'qK': fisher_params[9],
+        'phiK': fisher_params[10],
+        'Phi_phi0': fisher_params[11],
+        'Phi_theta0': fisher_params[12],
+        'Phi_r0': fisher_params[13]}
+
+        Fisher = sef(wave_params = param_dict, param_names=param_names, add_param_args=additional_kwargs,
+                live_dangerously = False, stability_plot = False, der_order = 6, Ndelta = 12,
+                )
+
         F = np.asarray(Fisher, dtype=float)
+
+        waveform_tmpl = xp.array(sef.waveform)
+        print("shape of waveform_tmpl: ", waveform_tmpl.shape)
+        PSD_funcs = generate_PSD(waveform=waveform_tmpl, dt=float(ctx['dt']), noise_PSD=get_sensitivity,
+                                 channels=channels, noise_kwargs=noise_kwargs, use_gpu=bool(use_gpu))
+        snr_model = float(np.sqrt(inner_product(waveform_tmpl, waveform_tmpl, PSD_funcs, float(ctx['dt']), use_gpu=bool(use_gpu))))
+
+        if cache_path is not None:
+            os.makedirs(cache_dir, exist_ok=True)
+            np.save(cache_path, {'F': F, 'snr_model': snr_model})
+            print(f"[FISHER] Saved to cache: {cache_path}")
+
+    try:
         print(f"[FISHER] {repr(F)}")
         print(f"[FISHER_IS_PD] {_is_pos_def(F)}")
-        F_inv = fishinv(param_dict['m1'], Fisher, index_of_M=0)
+        param_dict_m1 = fisher_params[0]
+        F_inv = fishinv(param_dict_m1, F, index_of_M=0)
         print(f"[FISHER_INV] {repr(F_inv)}")
         print(f"[FISHER_INV_IS_PD] {_is_pos_def(F_inv)}")
         F_std = np.sqrt(np.diag(F_inv))
@@ -208,14 +245,6 @@ def compute_fisher_parallelotope(ctx: dict,
     except Exception as e:
         raise RuntimeError(f"Fisher computation failed: {e}")
 
-
-    waveform_tmpl = xp.array(sef.waveform)
-    print("shape of waveform_tmpl: ", waveform_tmpl.shape)
-    
-    PSD_funcs = generate_PSD(waveform=waveform_tmpl, dt=float(ctx['dt']), noise_PSD=get_sensitivity,
-                             channels=channels, noise_kwargs=noise_kwargs, use_gpu=bool(use_gpu))
-    snr_model = float(np.sqrt(inner_product(waveform_tmpl, waveform_tmpl, PSD_funcs, float(ctx['dt']), use_gpu=bool(use_gpu))))
-    print(f"[MODEL] SNR in fisher calculation: {snr_model:.6f}")
 
     # Scale Fisher to target SNR
     print("Target SNR for scaling: ", _TARGET_SNR)
