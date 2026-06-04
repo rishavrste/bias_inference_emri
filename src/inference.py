@@ -1272,27 +1272,27 @@ def main(signal_param_array,
 
                     return np.asarray(fallback, dtype=float)
 
-                best_theta = extract_best_point()
+            best_theta = extract_best_point()
 
-                if best_theta is None:
-                    print("[WARN] Using starting point as fallback")
-                    best_theta = theta0
+            if best_theta is None:
+                print("[WARN] Using starting point as fallback")
+                best_theta = theta0
 
-                best_theta = np.asarray(best_theta, dtype=float)
+            best_theta = np.asarray(best_theta, dtype=float)
 
-                # Transform if still in unit cube
-                if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
-                    best_theta = prior_transform(best_theta)
+            # Transform if still in unit cube
+            if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
+                best_theta = prior_transform(best_theta)
 
-                best_val = float(objective(best_theta))
-                print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
-                      f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
+            best_val = float(objective(best_theta))
+            print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
+                  f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
 
-                # Checkpoint: save raw PARIS best BEFORE polish so a crash during
-                # the ~40-min Gaussian polish does not lose the PARIS result.
-                _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
-                np.save(_ckpt_path, best_theta)
-                print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
+            # Checkpoint: save raw PARIS best BEFORE polish so a crash during
+            # the ~40-min Gaussian polish does not lose the PARIS result.
+            _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
+            np.save(_ckpt_path, best_theta)
+            print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
 
             # ---------------------------
             # Local polishing (Gaussian steps)
