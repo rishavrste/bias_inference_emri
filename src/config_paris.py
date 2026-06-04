@@ -25,21 +25,28 @@ class Config:
         self.params_name = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
                          "Phi_phi0","Phi_theta0","Phi_r0"]
 
-        # --- Data paths ---
+        # --- Data paths (repo-relative; works for any user who clones) ---
+        _src = os.path.dirname(os.path.abspath(__file__))
+        _repo = os.path.dirname(_src)
+        _data = os.path.join(_repo, 'data')
+
         self.param_files = {
-            'IMRI':      '/scratch/josh.mat/opt_grid/signal_parameter_array_IMRI.npy',
-            'EMRI':      '/scratch/josh.mat/opt_grid/signal_parameter_array_EMRI.npy',
-            'IMRI_TAIL': '/scratch/josh.mat/opt_grid/signal_parameter_array_IMRI_TAIL.npy',
+            'IMRI':      os.path.join(_data, 'signal_parameter_array_IMRI.npy'),
+            'EMRI':      os.path.join(_data, 'signal_parameter_array_EMRI.npy'),
+            'IMRI_TAIL': os.path.join(_data, 'signal_parameter_array_IMRI_TAIL.npy'),
         }
+        # Result arrays are run outputs — not in repo. inference.py creates them
+        # automatically if absent. Override self.result_file to a scratch path if
+        # you want outputs to land somewhere else.
         self.result_files = {
-            'IMRI':      '/scratch/josh.mat/opt_grid/result_parameter_array_IMRI.npy',
-            'EMRI':      '/scratch/josh.mat/opt_grid/result_parameter_array_EMRI.npy',
-            'IMRI_TAIL': '/scratch/josh.mat/opt_grid/result_parameter_array_IMRI_TAIL.npy',
+            'IMRI':      os.path.join(_data, 'result_parameter_array_IMRI.npy'),
+            'EMRI':      os.path.join(_data, 'result_parameter_array_EMRI.npy'),
+            'IMRI_TAIL': os.path.join(_data, 'result_parameter_array_IMRI_TAIL.npy'),
         }
         self.param_file  = self.param_files[self.TYPE]
         self.result_file = self.result_files[self.TYPE]
         self.basedir = f"/scratch/josh.mat/opt_grid/results/{self.TYPE}/"
-        self.fisher_cache_dir = "/scratch/josh.mat/opt_grid/fisher_cache/"
+        self.fisher_cache_dir = os.path.join(_data, 'fisher_cache')
 
         # --- Grid range ---
         self.start_index = 0

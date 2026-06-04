@@ -1402,7 +1402,12 @@ if __name__ == "__main__":
     parameter_array =  np.load(file_folder)
 
     result_folder = cfg.result_file
-    result_array =  np.load(result_folder)
+    if not os.path.exists(result_folder):
+        result_array = np.zeros_like(parameter_array)
+        np.save(result_folder, result_array)
+        print(f"[INFO] Created result array: {result_folder}")
+    else:
+        result_array = np.load(result_folder)
 
     param_names_to_infer = cfg.param_names_to_infer
     parameter_selected = cfg.parameter_selected

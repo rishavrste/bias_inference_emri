@@ -9,3 +9,10 @@ results/
 
 # Virtual environments
 .venv
+
+# PBS job output files
+*.o[0-9]*
+*.e[0-9]*
+
+# Result arrays (run outputs — not committed, auto-created by inference.py)
+data/result_parameter_array_*.npy
