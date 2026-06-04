@@ -1498,7 +1498,12 @@ def main(signal_param_array,
                                      for i in range(ndim)]
                     _de_gen = [0]
                     def neg_obj(theta):
-                        return -float(objective(theta))
+                        try:
+                            return -float(objective(theta))
+                        except Exception:
+                            # Waveform too short (plunging orbit) or other
+                            # generation failure — treat as infeasible point.
+                            return np.inf
                     def _de_callback(xk, convergence):
                         _de_gen[0] += 1
                         if _de_gen[0] % 10 == 0:
@@ -1536,7 +1541,7 @@ def main(signal_param_array,
                 try:
                     nm_result = nelder_mead_optimize(
                         best_theta,
-                        lambda theta: -float(objective(theta)),
+                        neg_obj,
                         maxiter=cfg.nm_refine_maxiter,
                         xatol=cfg.nm_xatol,
                         fatol=cfg.nm_fatol,
