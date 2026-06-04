@@ -1215,7 +1215,7 @@ def main(signal_param_array,
                 if run_type == '0pa_vs_2pa':
                     best_fit_points[0:5] = best_theta
                 elif run_type == '1pa_vs_2pa':
-                    best_fit_points[0:5] = best_theta
+                    best_fit_points[0:5] = best_theta[0:5]
                     best_fit_points[-1] = best_theta[5]
 
             else:
