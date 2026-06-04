@@ -694,7 +694,12 @@ def main(signal_param_array,
     except:
         print("Starting Point is None")
         starting_point = None
-    
+
+    # Initialise result_array to the starting point so that if the optimizer
+    # crashes before writing its own result, we return the initial guess rather
+    # than raising a NameError.
+    result_array = starting_point.copy() if starting_point is not None else {}
+
     emri_kwargs = {"T": T, "dt": dt,'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': True}
     add_kwargs = {'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': True}
     # Fisher is always computed at 2PA (the true signal), independent of the
@@ -1262,6 +1267,12 @@ def main(signal_param_array,
             best_val = float(objective(best_theta))
             print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
                   f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
+
+            # Checkpoint: save raw PARIS best BEFORE polish so a crash during
+            # the ~40-min Gaussian polish does not lose the PARIS result.
+            _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
+            np.save(_ckpt_path, best_theta)
+            print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
 
             # ---------------------------
             # Local polishing (Gaussian steps)
