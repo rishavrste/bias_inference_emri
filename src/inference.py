@@ -969,10 +969,16 @@ def main(signal_param_array,
                     cache_dir=cache_dir,
                     cache_index=grid_index,
                 )
-                diag_sigma = fisher_meta['diag_sigma']
+                diag_sigma_fisher = np.asarray(fisher_meta['diag_sigma'])
+                # Pad phase dimensions with uniform ±pi if intrinsic_phase
+                if len(diag_sigma_fisher) < ndim:
+                    diag_sigma_full = np.full(ndim, np.pi / float(prior_sigma_range))
+                    diag_sigma_full[:len(diag_sigma_fisher)] = diag_sigma_fisher
+                else:
+                    diag_sigma_full = diag_sigma_fisher[:ndim]
                 bounds = []
-                for i in range(len(diag_sigma)):
-                    bounds.append((theta_ref[i] - diag_sigma[i]*prior_sigma_range, theta_ref[i] + diag_sigma[i]*prior_sigma_range))
+                for i in range(ndim):
+                    bounds.append((theta_ref[i] - diag_sigma_full[i]*prior_sigma_range, theta_ref[i] + diag_sigma_full[i]*prior_sigma_range))
 
                 print("Fisher-based bounds for optimization:")
                 for i, (lower, upper) in enumerate(bounds):
@@ -1142,6 +1148,25 @@ def main(signal_param_array,
                 )
                 print("Fisher parallelotope computed successfully.")
                 fisher_ok = True
+
+                # When parameter_selected == "intrinsic_phase", ndim is 7 (0PA) or
+                # 8 (1PA) but the Fisher only covers the intrinsic params (5 or 6D).
+                # Phase params (Phi_phi0, Phi_r0 at theta indices 5–6) have no
+                # Fisher-informed prior — their correlations with intrinsic params are
+                # negligible for EMRI signals.  Pad Q and b with a uniform ±pi prior
+                # for the phase dimensions so PARIS operates in the correct space.
+                if len(b) < ndim:
+                    n_fisher = len(b)
+                    Q_padded = np.eye(ndim)
+                    b_padded = np.full(ndim, np.pi)      # default: uniform [0,2pi]
+                    Q_padded[:n_fisher, :n_fisher] = Q   # intrinsic Fisher block
+                    b_padded[:n_fisher] = b
+                    # For 1PA intrinsic_phase (ndim=8): chi2 is last in both Fisher
+                    # and theta, so the block copy above already handles it correctly
+                    # as long as param_names_to_infer ends with chi2.
+                    Q, b = Q_padded, b_padded
+                    print(f"[FISHER] Padded to ndim={ndim}: Fisher dims {n_fisher}, "
+                          f"phase dims {ndim - n_fisher} (uniform ±pi prior)")
 
             except Exception as e:
                 raise RuntimeError(f"[FATAL] Fisher prior failed: {e}") from e
