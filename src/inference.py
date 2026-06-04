@@ -679,7 +679,8 @@ def main(signal_param_array,
         prior_sigma_range,using_evec,
         paris_conf,
         seed,cfg, use_gpu=True,
-        cache_dir=None, grid_index=None):
+        cache_dir=None, grid_index=None,
+        refine_only=False):
     
 
     timestamp = time.strftime('%Y%m%d-%H%M%S')
@@ -1205,14 +1206,33 @@ def main(signal_param_array,
             lhs_seed_dir = os.path.join(idx_dir, lhs_seed_rel)
 
             # ---------------------------
-            # Run PARIS optimizer
+            # Run PARIS optimizer (or skip if --refine-only)
             # ---------------------------
-            print(f"\n{_ts()} {'='*55}")
-            print(f"{_ts()} STAGE 1: PARIS ({paris_conf['paris_seed_n']} seeds, "
-                  f"{cfg.paris_niterations} iterations, ndim={ndim})")
-            print(f"{_ts()} {'='*55}")
-            _t_paris_start = time.time()
-            sampler, prior_transform, ext_points = run_paris(
+            if refine_only:
+                # Load best_theta from the warm-start starting point (previous
+                # PARIS result) and bypass sampling entirely.
+                if starting_point is not None:
+                    keys = param_names_to_infer
+                    best_theta = np.array([starting_point[k] for k in keys], dtype=float)
+                    best_val   = float(objective(best_theta))
+                    print(f"{_ts()} [REFINE-ONLY] Loaded from checkpoint: "
+                          f"score={best_val:.6e}  theta={best_theta.tolist()}")
+                    # Save a raw checkpoint so the rest of the code can proceed
+                    _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
+                    np.save(_ckpt_path, best_theta)
+                    # Skip to polish — jump over the run_paris / extract block
+                    fisher_meta = fisher_meta  # already computed above
+                else:
+                    print(f"{_ts()} [WARN] --refine-only but no starting point found; running PARIS")
+                    refine_only = False
+
+            if not refine_only:
+                print(f"\n{_ts()} {'='*55}")
+                print(f"{_ts()} STAGE 1: PARIS ({paris_conf['paris_seed_n']} seeds, "
+                      f"{cfg.paris_niterations} iterations, ndim={ndim})")
+                print(f"{_ts()} {'='*55}")
+                _t_paris_start = time.time()
+                sampler, prior_transform, ext_points = run_paris(
                 ndim=ndim,
                 prior_center=theta0,
                 score_func=objective,
@@ -1252,27 +1272,27 @@ def main(signal_param_array,
 
                     return np.asarray(fallback, dtype=float)
 
-            best_theta = extract_best_point()
+                best_theta = extract_best_point()
 
-            if best_theta is None:
-                print("[WARN] Using starting point as fallback")
-                best_theta = theta0
+                if best_theta is None:
+                    print("[WARN] Using starting point as fallback")
+                    best_theta = theta0
 
-            best_theta = np.asarray(best_theta, dtype=float)
+                best_theta = np.asarray(best_theta, dtype=float)
 
-            # Transform if still in unit cube
-            if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
-                best_theta = prior_transform(best_theta)
+                # Transform if still in unit cube
+                if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
+                    best_theta = prior_transform(best_theta)
 
-            best_val = float(objective(best_theta))
-            print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
-                  f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
+                best_val = float(objective(best_theta))
+                print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
+                      f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
 
-            # Checkpoint: save raw PARIS best BEFORE polish so a crash during
-            # the ~40-min Gaussian polish does not lose the PARIS result.
-            _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
-            np.save(_ckpt_path, best_theta)
-            print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
+                # Checkpoint: save raw PARIS best BEFORE polish so a crash during
+                # the ~40-min Gaussian polish does not lose the PARIS result.
+                _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
+                np.save(_ckpt_path, best_theta)
+                print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
 
             # ---------------------------
             # Local polishing (Gaussian steps)
@@ -1577,6 +1597,8 @@ if __name__ == "__main__":
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument('--start', type=int, default=None)
     _parser.add_argument('--end',   type=int, default=None)
+    _parser.add_argument('--refine-only', dest='refine_only', action='store_true',
+                         help='Skip PARIS; load previous checkpoint and run DE+NM only')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
@@ -1665,7 +1687,8 @@ if __name__ == "__main__":
                            paris_conf=paris_conf,seed=seed,
                            cfg = cfg,
                            cache_dir=os.path.join(cfg.fisher_cache_dir, cfg.TYPE),
-                           grid_index=i)
+                           grid_index=i,
+                           refine_only=_cli.refine_only)
         result = list(result_dict.values())
         result_array[i] = result
         np.save(result_folder,result_array)
