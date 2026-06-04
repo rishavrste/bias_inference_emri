@@ -1505,7 +1505,8 @@ def main(signal_param_array,
                               f"({-de_result.fun:.6e} vs {best_val:.6e}, "
                               f"{_de_elapsed:.1f} min, {de_result.nfev} evals)")
                 except Exception as exc:
-                    print(f"{_ts()} [WARN] DE refinement failed: {exc}")
+                    import traceback
+                    print(f"{_ts()} [WARN] DE refinement failed: {exc}\n{traceback.format_exc()}")
 
                 print(f"\n{_ts()} {'='*55}")
                 print(f"{_ts()} STAGE 3 (REFINE): Nelder-Mead "
@@ -1558,7 +1559,8 @@ def main(signal_param_array,
                     np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
 
                 except Exception as exc:
-                    print(f"[WARN] NM refinement failed: {exc}")
+                    import traceback
+                    print(f"[WARN] NM refinement failed: {exc}\n{traceback.format_exc()}")
 
         # ---------------------------
         # Global failure handler
