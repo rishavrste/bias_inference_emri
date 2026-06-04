@@ -80,6 +80,9 @@ class Config:
         # With ndim=5 and popsize=2: pop=10, so 500 evals ≈ 50 generations (~42 min for EMRI).
         self.de_refine_maxiter = 50    # generations (≈500 evals with popsize=2, ndim=5)
         self.de_refine_popsize = 2     # small population — we already have a good start from PARIS
+        # NM refinement: short polish only (colleague uses maxiter=300, maxfev=300)
+        self.nm_refine_maxiter = 300
+        self.nm_refine_maxfev  = 300
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
 
         # --- Misc ---

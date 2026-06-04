@@ -1466,7 +1466,7 @@ def main(signal_param_array,
                     nm_result = nelder_mead_optimize(
                         best_theta,
                         lambda theta: -float(objective(theta)),
-                        maxiter=cfg.nm_maxiter,
+                        maxiter=cfg.nm_refine_maxiter,
                         xatol=cfg.nm_xatol,
                         fatol=cfg.nm_fatol,
                     )
