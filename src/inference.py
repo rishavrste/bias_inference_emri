@@ -1493,8 +1493,9 @@ def main(signal_param_array,
                         diag_sigma_full_r[:len(diag_sigma_r)] = diag_sigma_r
                     else:
                         diag_sigma_full_r = diag_sigma_r[:ndim]
-                    refine_bounds = [(best_theta[i] - diag_sigma_full_r[i]*prior_sigma_range,
-                                      best_theta[i] + diag_sigma_full_r[i]*prior_sigma_range)
+                    _rpr = cfg.refine_prior_sigma_range
+                    refine_bounds = [(best_theta[i] - diag_sigma_full_r[i]*_rpr,
+                                      best_theta[i] + diag_sigma_full_r[i]*_rpr)
                                      for i in range(ndim)]
                     _de_gen = [0]
                     def neg_obj(theta):
@@ -1604,9 +1605,19 @@ if __name__ == "__main__":
     _parser.add_argument('--end',   type=int, default=None)
     _parser.add_argument('--refine-only', dest='refine_only', action='store_true',
                          help='Skip PARIS; load previous checkpoint and run DE+NM only')
+    _parser.add_argument('--run-type', dest='run_type', default=None,
+                         choices=['0pa_vs_2pa', '1pa_vs_2pa'],
+                         help='Override config run_type (also updates param_names_to_infer)')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
+    if _cli.run_type is not None:
+        cfg.run_type = _cli.run_type
+        cfg.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2'] \
+            if cfg.run_type == '1pa_vs_2pa' else ['m1', 'm2', 'a', 'p0', 'e0']
+        _pa = '0pa' if cfg.run_type == '0pa_vs_2pa' else '1pa'
+        cfg.result_file = cfg.result_files[cfg.TYPE].replace('.npy', f'_{_pa}.npy')
+        cfg.basedir = f"/scratch/josh.mat/opt_grid/results/{cfg.TYPE}_{_pa}/"
     print("Start")
 
     file_folder = cfg.param_file

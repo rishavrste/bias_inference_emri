@@ -62,7 +62,7 @@ class Config:
         self.nm_xatol = 1e-6
         self.using_evec = False
         self.seed_cloud = 200
-        self.paris_seed_n = 100
+        self.paris_seed_n = 80
         self.paris_niterations = 2000
         self.nm_fatol = 1e-6
         self.de_maxiter = 1000
@@ -84,6 +84,7 @@ class Config:
         self.nm_refine_maxiter = 300
         self.nm_refine_maxfev  = 300
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
+        self.refine_prior_sigma_range = 15.0  # tighter bounds for DE/NM (vs 28 for PARIS)
 
         # --- Misc ---
         self.output_text_file = "paris_optimization_results.txt"

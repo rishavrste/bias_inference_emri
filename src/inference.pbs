@@ -1,9 +1,15 @@
 #!/bin/bash
-# Single-point submission (test one grid index):
+# Single point:
 #   qsub -v GRID_START=0 src/inference.pbs
 #
-# Array job (all 25 EMRI points in parallel):
-#   qsub -J 0-24 src/inference.pbs
+# Full 0PA grid:
+#   qsub -J 0-24 -v RUN_TYPE=0pa_vs_2pa src/inference.pbs
+#
+# Full 1PA grid:
+#   qsub -J 0-24 -v RUN_TYPE=1pa_vs_2pa src/inference.pbs
+#
+# Refine-only (skip PARIS):
+#   qsub -v "GRID_START=0,REFINE_ONLY=1" src/inference.pbs
 #
 # The PBS_ARRAY_INDEX env var is set automatically for array jobs.
 # GRID_START env var can override it for single-point submissions.
@@ -34,8 +40,12 @@ mkdir -p "$LOG_DIR"
 image="/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif"
 module load singularity
 
+EXTRA_ARGS=""
+[ -n "$REFINE_ONLY" ] && EXTRA_ARGS="$EXTRA_ARGS --refine-only"
+[ -n "$RUN_TYPE"    ] && EXTRA_ARGS="$EXTRA_ARGS --run-type $RUN_TYPE"
+
 singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_${IDX}.err.$PBS_JOBID"
 PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
 cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
-\$PYTHON inference.py --start $IDX --end $END
+\$PYTHON inference.py --start $IDX --end $END $EXTRA_ARGS
 EOF
