@@ -1420,6 +1420,13 @@ def main(signal_param_array,
             
 
 if __name__ == "__main__":
+    # CLI args override config values — used by PBS array jobs to set per-element
+    # grid index without editing the config file.
+    _parser = argparse.ArgumentParser(add_help=False)
+    _parser.add_argument('--start', type=int, default=None)
+    _parser.add_argument('--end',   type=int, default=None)
+    _cli, _ = _parser.parse_known_args()
+
     cfg = Config()
     print("Start")
 
@@ -1442,7 +1449,7 @@ if __name__ == "__main__":
 
     base_dir = cfg.basedir
     TYPE = cfg.TYPE
-    
+
     run_type = cfg.run_type
     nchannels = cfg.nchannels
 
@@ -1456,8 +1463,9 @@ if __name__ == "__main__":
     paris_conf['seed_cloud'] = cfg.seed_cloud
     paris_conf['paris_seed_n'] = cfg.paris_seed_n
 
-    startindex = cfg.start_index
-    endindex = cfg.end_index
+    startindex = _cli.start if _cli.start is not None else cfg.start_index
+    endindex   = _cli.end   if _cli.end   is not None else cfg.end_index
+    print(f"[INFO] Grid range: [{startindex}, {endindex})  TYPE={TYPE}  run_type={run_type}")
     for i in range(startindex,endindex):
         paramter_selected = parameter_array[i]
         params = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
