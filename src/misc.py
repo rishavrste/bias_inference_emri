@@ -59,31 +59,41 @@ def _is_pos_def(mat: np.ndarray) -> bool:
 def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
     """Clip mapped physical parameters to minimal physical ranges.
 
-    Indices: 0:m1, 1:m2, 2:a, 3:p0, 4:e0, [5:chi2]
-    - m1, m2 > 0
-    - a in [-0.9999, 0.9999]
-    - e0 in (0, 1)
-    - chi2 in [-0.99, 0.99] (only when pa_template == '1PA')
+    Indices: 0:m1, 1:m2, 2:a, 3:p0, 4:e0, [5:Phi_phi0, 6:Phi_r0], [5 or 7:chi2]
+
+    - m1, m2  > 0
+    - a       in [-0.9999,  0.9999]
+    - e0      in [1e-8,     1-1e-8]
+    - chi2    in [-1.0,     1.0]    (index 5 when ndim==6, index 7 when ndim==8)
     """
     x = np.asarray(theta, dtype=float).copy()
+
     if x.ndim == 1:
         if x.shape[0] >= 1:
-            x[0] = max(x[0], 1e-30)
+            x[0] = max(x[0], 1e-30)           # m1 > 0
         if x.shape[0] >= 2:
-            x[1] = max(x[1], 1e-30)
+            x[1] = max(x[1], 1e-30)           # m2 > 0
         if x.shape[0] >= 3:
-            x[2] = np.clip(x[2], -0.9999, 0.9999)
+            x[2] = np.clip(x[2], -0.9999, 0.9999)   # a (spin)
         if x.shape[0] >= 5:
-            x[4] = np.clip(x[4], 1e-8, 1 - 1e-8)
-   
+            x[4] = np.clip(x[4], 1e-8, 1 - 1e-8)   # e0 (eccentricity)
+        if x.shape[0] == 6:
+            x[5] = np.clip(x[5], -1.0, 1.0)         # chi2 (intrinsic, no phase)
+        if x.shape[0] == 8:
+            x[7] = np.clip(x[7], -1.0, 1.0)         # chi2 (intrinsic + phase)
         return x
+
     else:
-        x[:, 0] = np.maximum(x[:, 0], 1e-30)
-        x[:, 1] = np.maximum(x[:, 1], 1e-30)
+        x[:, 0] = np.maximum(x[:, 0], 1e-30)        # m1 > 0
+        x[:, 1] = np.maximum(x[:, 1], 1e-30)        # m2 > 0
         if x.shape[1] >= 3:
-            x[:, 2] = np.clip(x[:, 2], -0.9999, 0.9999)
+            x[:, 2] = np.clip(x[:, 2], -0.9999, 0.9999)  # a (spin)
         if x.shape[1] >= 5:
-            x[:, 4] = np.clip(x[:, 4], 1e-8, 1 - 1e-8)
+            x[:, 4] = np.clip(x[:, 4], 1e-8, 1 - 1e-8)  # e0 (eccentricity)
+        if x.shape[1] == 6:
+            x[:, 5] = np.clip(x[:, 5], -1.0, 1.0)        # chi2 (intrinsic, no phase)
+        if x.shape[1] == 8:
+            x[:, 7] = np.clip(x[:, 7], -1.0, 1.0)        # chi2 (intrinsic + phase)
         return x
     
 def compute_fisher_parallelotope(ctx: dict,
@@ -198,7 +208,6 @@ def compute_fisher_parallelotope(ctx: dict,
     except Exception as e:
         raise RuntimeError(f"Fisher computation failed: {e}")
 
-    emri_flags = {"T": ctx['T'], "dt": ctx['dt'], '1PA': False, 'evolve_primary': False, '2PA': False}
 
     waveform_tmpl = xp.array(sef.waveform)
     print("shape of waveform_tmpl: ", waveform_tmpl.shape)
@@ -267,9 +276,10 @@ def compute_fisher_parallelotope(ctx: dict,
         'eigvals': evals.tolist(),
         'snr_model': float(snr_model),
         'scale_applied': float(scale),
-        'using_evec': True,
-        #'reg_added': float(reg),
-    }
+        'using_evec': True}
+    
+    print("Bound for each parameter (b) in prior: ", b)
+    
     return evecs, b, meta
 
 def covariance_from_fisher_parallelotope(Q: np.ndarray, b: np.ndarray, prior_sigma_range: float = 20) -> np.ndarray:
@@ -364,8 +374,8 @@ def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     denom = xp.sqrt(optimal_snr)
 
     # #---remove these lines"
-    # h_signal = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
-    # denom = denom * xp.sqrt(h_signal)
+    h_signal = inner_prod(signal, signal, PSD, fixed['delta_f'], xp=cp)
+    denom = denom * xp.sqrt(h_signal)
 
 
     if (maximize_phase):
@@ -379,7 +389,7 @@ def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
         print(f"[WARN] overlap computation returned {snr}; setting to 0")
         return -np.inf
     # print(snr)
-    return float(snr) * 100
+    return float(snr)
 
 def calculate_detection_snr(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
                     Phi_phi0, Phi_theta0, Phi_r0,add_kwargs,
@@ -418,8 +428,7 @@ def timemax_correlation(h1, h2,dt, PSD, xp=np):
     # FFT with dt scaling
     H1 = xp.array([xp.fft.rfft(h1[k]) * dt for k in range(2)])
     H2 = xp.array([xp.fft.rfft(h2[k]) * dt for k in range(2)])
-    # print("H1 shape: ", H1.shape
-    #       ,"H2 shape: ", H2.shape)
+    # print("H1 shape: ", H1.shape, "H2 shape: ", H2.shape)
     # print("PSD shape: ", PSD.shape)
 
     Y = xp.zeros_like(H1)

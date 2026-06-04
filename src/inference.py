@@ -486,6 +486,11 @@ def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int 
         bounds = fisher_bounds
     else:
         bounds = [(x*(1-1e-3), x*(1+1e-3)) for x in theta0]  # Define bounds around initial guess
+    if theta0.shape[0] == 6 or theta0.shape[0] == 8:
+        print("Earlier Bound are :", bounds)
+        print("\nApplying special bounds for chi2\n")
+        bounds[-1] = (-1, 1)
+        print("Later Bound are :", bounds)
     res = differential_evolution(
         func=objective,
         bounds=bounds,
