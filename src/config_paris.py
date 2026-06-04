@@ -43,9 +43,10 @@ class Config:
             'EMRI':      os.path.join(_data, 'result_parameter_array_EMRI.npy'),
             'IMRI_TAIL': os.path.join(_data, 'result_parameter_array_IMRI_TAIL.npy'),
         }
+        _pa = '0pa' if self.run_type == '0pa_vs_2pa' else '1pa'
         self.param_file  = self.param_files[self.TYPE]
-        self.result_file = self.result_files[self.TYPE]
-        self.basedir = f"/scratch/josh.mat/opt_grid/results/{self.TYPE}/"
+        self.result_file = self.result_files[self.TYPE].replace('.npy', f'_{_pa}.npy')
+        self.basedir = f"/scratch/josh.mat/opt_grid/results/{self.TYPE}_{_pa}/"
         self.fisher_cache_dir = os.path.join(_data, 'fisher_cache')
 
         # --- Grid range ---
