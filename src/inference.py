@@ -1615,6 +1615,21 @@ if __name__ == "__main__":
     paris_conf['seed_cloud'] = cfg.seed_cloud
     paris_conf['paris_seed_n'] = cfg.paris_seed_n
 
+    def _find_latest_starting_point(base_dir_i, target_func):
+        """Return the highest-numbered starting_point_N.npy from any previous
+        PARIS run, or None if no previous run exists.  This lets a re-run warm-
+        start PARIS around the previous best rather than the raw signal params."""
+        import glob
+        pattern = os.path.join(base_dir_i, f"paris_{target_func}_id_*",
+                               "starting_point_*.npy")
+        matches = glob.glob(pattern)
+        if not matches:
+            return None
+        def _sp_num(p):
+            m = re.search(r'starting_point_(\d+)\.npy$', p)
+            return int(m.group(1)) if m else -1
+        return max(matches, key=_sp_num)
+
     startindex = _cli.start if _cli.start is not None else cfg.start_index
     endindex   = _cli.end   if _cli.end   is not None else cfg.end_index
     print(f"[INFO] Grid range: [{startindex}, {endindex})  TYPE={TYPE}  run_type={run_type}")
@@ -1624,9 +1639,14 @@ if __name__ == "__main__":
                          "Phi_phi0","Phi_theta0","Phi_r0","dt","T","chi2"]
         param_dict = dict(zip(params, paramter_selected))
         base_dir_i = os.path.join(base_dir, f"{TYPE}_{i}")
-        starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
         os.makedirs(base_dir_i, exist_ok=True)
-        np.save(starting_point_file,param_dict)
+        prev_sp = _find_latest_starting_point(base_dir_i, target_func)
+        if prev_sp is not None:
+            starting_point_file = prev_sp
+            print(f"[INFO] Warm-starting from previous result: {prev_sp}")
+        else:
+            starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
+            np.save(starting_point_file, param_dict)
     
         # target_func, optimizer,
         # n_channels, startingpoints_file)
