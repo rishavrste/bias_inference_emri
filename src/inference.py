@@ -664,6 +664,11 @@ def run_paris(ndim: int,
     return sampler, paris_prior_transform, external_lhs_points
 
 
+def _ts():
+    """Return a compact wall-clock timestamp string for log lines."""
+    return time.strftime('[%H:%M:%S]')
+
+
 def main(signal_param_array,
         dt,T,chi2,
         run_type,
@@ -696,11 +701,23 @@ def main(signal_param_array,
     # template PA order used in the optimisation objective.
     fisher_add_kwargs = {'chi2': chi2,'evolve_1PA': True,'evolve_primary': False,'evolve_2PA': True}
         
+    print(f"\n{_ts()} {'='*55}")
+    print(f"{_ts()} RUN CONFIGURATION")
+    print(f"{_ts()} {'='*55}")
+    print(f"{_ts()} TYPE={run_type}  template={parameter_selected}  optimizer={optimizer}")
+    print(f"{_ts()} target={target_func}  nchannels={n_channels}  noise={include_noise}")
+    print(f"{_ts()} params_to_infer={param_names_to_infer}")
+    print(f"{_ts()} T={T:.3f}yr  dt={dt}s  chi2={chi2}")
+    print(f"{_ts()} prior_sigma_range={prior_sigma_range}  using_evec={using_evec}")
+    print(f"{_ts()} {'='*55}\n")
+
+    print(f"{_ts()} Generating true 2PA waveform...")
     ctx = prepare_true_waveform(signal_param_array, emri_kwargs, add_kwargs,add_noise=include_noise, use_gpu=use_gpu,seed=seed,nchannels=n_channels)
 
     snr_2 = inner_prod(ctx['waveform_true_fft_without_noise'], ctx['waveform_true_fft_without_noise'], ctx['PSD_funcs'], ctx['delta_f'], xp=xp)
     snr = np.sqrt(snr_2.get()) if hasattr(snr_2, "get") else np.sqrt(snr_2)
     _TARGET_SNR = snr
+    print(f"{_ts()} True signal SNR: {snr:.4f}")
         
     temp_dict = {'waveform_true_fft': ctx['waveform_true_fft'], 'waveform_true_fft_without_noise': ctx['waveform_true_fft_without_noise'],
                   'PSD': ctx['PSD_funcs'], 'dt': ctx['dt'], 'T': ctx['T'],
@@ -1147,7 +1164,7 @@ def main(signal_param_array,
                     cache_dir=cache_dir,
                     cache_index=grid_index,
                 )
-                print("Fisher parallelotope computed successfully.")
+                print(f"{_ts()} Fisher parallelotope computed successfully.")
                 fisher_ok = True
 
                 # When parameter_selected == "intrinsic_phase", ndim is 7 (0PA) or
@@ -1185,6 +1202,11 @@ def main(signal_param_array,
             # ---------------------------
             # Run PARIS optimizer
             # ---------------------------
+            print(f"\n{_ts()} {'='*55}")
+            print(f"{_ts()} STAGE 1: PARIS ({paris_conf['paris_seed_n']} seeds, "
+                  f"{cfg.paris_niterations} iterations, ndim={ndim})")
+            print(f"{_ts()} {'='*55}")
+            _t_paris_start = time.time()
             sampler, prior_transform, ext_points = run_paris(
                 ndim=ndim,
                 prior_center=theta0,
@@ -1238,6 +1260,8 @@ def main(signal_param_array,
                 best_theta = prior_transform(best_theta)
 
             best_val = float(objective(best_theta))
+            print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
+                  f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
 
             # ---------------------------
             # Local polishing (Gaussian steps)
@@ -1425,9 +1449,11 @@ def main(signal_param_array,
             # Post-PARIS refinement: DE then Nelder-Mead
             # ---------------------------
             if cfg.refine_after_paris:
-                print(f"\n{'='*60}")
-                print(f"[REFINE] Stage 2: Differential Evolution ({cfg.de_refine_maxiter} steps)")
-                print(f"{'='*60}")
+                print(f"\n{_ts()} {'='*55}")
+                print(f"{_ts()} STAGE 2 (REFINE): Differential Evolution "
+                      f"({cfg.de_refine_maxiter} gen, popsize={cfg.de_refine_popsize})")
+                print(f"{_ts()} {'='*55}")
+                _t_de_start = time.time()
                 try:
                     # Build Fisher bounds around PARIS best point
                     diag_sigma_r = np.asarray(fisher_meta['diag_sigma'])
@@ -1439,8 +1465,15 @@ def main(signal_param_array,
                     refine_bounds = [(best_theta[i] - diag_sigma_full_r[i]*prior_sigma_range,
                                       best_theta[i] + diag_sigma_full_r[i]*prior_sigma_range)
                                      for i in range(ndim)]
+                    _de_gen = [0]
                     def neg_obj(theta):
                         return -float(objective(theta))
+                    def _de_callback(xk, convergence):
+                        _de_gen[0] += 1
+                        if _de_gen[0] % 10 == 0:
+                            print(f"{_ts()} [DE] gen={_de_gen[0]:3d}  "
+                                  f"score={-neg_obj(xk):.6e}  convergence={convergence:.4f}")
+                        return False
                     de_result = differential_evolution_optimize(
                         theta0=best_theta,
                         objective=neg_obj,
@@ -1450,18 +1483,24 @@ def main(signal_param_array,
                         init='latinhypercube',
                         popsize=cfg.de_refine_popsize,
                     )
+                    _de_elapsed = (time.time() - _t_de_start) / 60
                     if -de_result.fun > best_val:
                         best_theta = np.asarray(de_result.x, dtype=float)
                         best_val = -de_result.fun
-                        print(f"[REFINE] DE improved score to {best_val:.6e}")
+                        print(f"{_ts()} [REFINE] DE improved score to {best_val:.6e}  "
+                              f"({_de_elapsed:.1f} min, {de_result.nfev} evals)")
                     else:
-                        print(f"[REFINE] DE did not improve on PARIS ({-de_result.fun:.6e} vs {best_val:.6e})")
+                        print(f"{_ts()} [REFINE] DE did not improve "
+                              f"({-de_result.fun:.6e} vs {best_val:.6e}, "
+                              f"{_de_elapsed:.1f} min, {de_result.nfev} evals)")
                 except Exception as exc:
-                    print(f"[WARN] DE refinement failed: {exc}")
+                    print(f"{_ts()} [WARN] DE refinement failed: {exc}")
 
-                print(f"\n{'='*60}")
-                print(f"[REFINE] Stage 3: Nelder-Mead")
-                print(f"{'='*60}")
+                print(f"\n{_ts()} {'='*55}")
+                print(f"{_ts()} STAGE 3 (REFINE): Nelder-Mead "
+                      f"(maxiter={cfg.nm_refine_maxiter})")
+                print(f"{_ts()} {'='*55}")
+                _t_nm_start = time.time()
                 try:
                     nm_result = nelder_mead_optimize(
                         best_theta,
@@ -1470,12 +1509,17 @@ def main(signal_param_array,
                         xatol=cfg.nm_xatol,
                         fatol=cfg.nm_fatol,
                     )
+                    _nm_elapsed = (time.time() - _t_nm_start) / 60
                     if -nm_result.fun > best_val:
                         best_theta = np.asarray(nm_result.x, dtype=float)
                         best_val = -nm_result.fun
-                        print(f"[REFINE] NM improved score to {best_val:.6e}")
+                        print(f"{_ts()} [REFINE] NM improved score to {best_val:.6e}  "
+                              f"({_nm_elapsed:.1f} min, {nm_result.nfev} evals, "
+                              f"converged={nm_result.success})")
                     else:
-                        print(f"[REFINE] NM did not improve ({-nm_result.fun:.6e} vs {best_val:.6e})")
+                        print(f"{_ts()} [REFINE] NM did not improve "
+                              f"({-nm_result.fun:.6e} vs {best_val:.6e}, "
+                              f"{_nm_elapsed:.1f} min, converged={nm_result.success})")
 
                     # Update result_array with refined point
                     for i, key in enumerate(starting_point_keys):
