@@ -381,8 +381,6 @@ def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
                     **fixed):
     xp = cp if fixed['use_gpu'] else np
 
-    print(" calculation with noise addition, using signal+noise")
-
     signal = fixed['waveform_true_fft']
     waveform_response = fixed['waveform_response']
     wave_params = [m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK, 
