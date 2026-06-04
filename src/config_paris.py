@@ -72,6 +72,16 @@ class Config:
         self.include_noise = False
         self.prior_sigma_range = 28.0
 
+        # --- Post-PARIS refinement ---
+        # If True, after PARIS runs DE(de_refine_maxiter steps) then Nelder-Mead
+        # from the PARIS best point to pinpoint the peak.
+        self.refine_after_paris = True
+        # DE refinement uses popsize=2 so de_refine_maxiter ≈ total function evaluations.
+        # With ndim=5 and popsize=2: pop=10, so 500 evals ≈ 50 generations (~42 min for EMRI).
+        self.de_refine_maxiter = 50    # generations (≈500 evals with popsize=2, ndim=5)
+        self.de_refine_popsize = 2     # small population — we already have a good start from PARIS
+        self.overlap_warn_threshold = 0.9  # warn if final overlap < this
+
         # --- Misc ---
         self.output_text_file = "paris_optimization_results.txt"
         self.seed = 42

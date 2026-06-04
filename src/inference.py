@@ -481,7 +481,8 @@ def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, xat
 
 from scipy.optimize import differential_evolution
 def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int = 1000, tol: float = 1e-4, atol: float = 1e-5,x0: Optional[np.ndarray] = None,
-                                    fisher_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,init='sobol',seed: Optional[int] = 42):
+                                    fisher_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,init='sobol',seed: Optional[int] = 42,
+                                    popsize: int = 15):
     if fisher_bounds is not None:
         bounds = fisher_bounds
     else:
@@ -499,8 +500,8 @@ def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int 
         atol=atol,
         x0=theta0,
         seed=seed,
-        init=init
-
+        init=init,
+        popsize=popsize,
     )
     return res
 
@@ -1410,12 +1411,106 @@ def main(signal_param_array,
             save_dir=idx_dir,
             filename_prefix=f"opt_PARIS_{target_func}_id_{id}")
 
+            # ---------------------------
+            # Overlap sanity check
+            # ---------------------------
+            if final_overlap < cfg.overlap_warn_threshold:
+                print(f"[WARN] Overlap after PARIS ({final_overlap:.4f}) is below "
+                      f"threshold ({cfg.overlap_warn_threshold}). "
+                      f"Refinement may not converge well.")
+            else:
+                print(f"[INFO] Overlap after PARIS: {final_overlap:.4f} — proceeding to refinement.")
+
+            # ---------------------------
+            # Post-PARIS refinement: DE then Nelder-Mead
+            # ---------------------------
+            if cfg.refine_after_paris:
+                print(f"\n{'='*60}")
+                print(f"[REFINE] Stage 2: Differential Evolution ({cfg.de_refine_maxiter} steps)")
+                print(f"{'='*60}")
+                try:
+                    # Build Fisher bounds around PARIS best point
+                    diag_sigma_r = np.asarray(fisher_meta['diag_sigma'])
+                    if len(diag_sigma_r) < ndim:
+                        diag_sigma_full_r = np.full(ndim, np.pi / float(prior_sigma_range))
+                        diag_sigma_full_r[:len(diag_sigma_r)] = diag_sigma_r
+                    else:
+                        diag_sigma_full_r = diag_sigma_r[:ndim]
+                    refine_bounds = [(best_theta[i] - diag_sigma_full_r[i]*prior_sigma_range,
+                                      best_theta[i] + diag_sigma_full_r[i]*prior_sigma_range)
+                                     for i in range(ndim)]
+                    def neg_obj(theta):
+                        return -float(objective(theta))
+                    de_result = differential_evolution_optimize(
+                        theta0=best_theta,
+                        objective=neg_obj,
+                        fisher_bounds=refine_bounds,
+                        maxiter=cfg.de_refine_maxiter,
+                        seed=seed,
+                        init='latinhypercube',
+                        popsize=cfg.de_refine_popsize,
+                    )
+                    if -de_result.fun > best_val:
+                        best_theta = np.asarray(de_result.x, dtype=float)
+                        best_val = -de_result.fun
+                        print(f"[REFINE] DE improved score to {best_val:.6e}")
+                    else:
+                        print(f"[REFINE] DE did not improve on PARIS ({-de_result.fun:.6e} vs {best_val:.6e})")
+                except Exception as exc:
+                    print(f"[WARN] DE refinement failed: {exc}")
+
+                print(f"\n{'='*60}")
+                print(f"[REFINE] Stage 3: Nelder-Mead")
+                print(f"{'='*60}")
+                try:
+                    nm_result = nelder_mead_optimize(
+                        best_theta,
+                        lambda theta: -float(objective(theta)),
+                        maxiter=cfg.nm_maxiter,
+                        xatol=cfg.nm_xatol,
+                        fatol=cfg.nm_fatol,
+                    )
+                    if -nm_result.fun > best_val:
+                        best_theta = np.asarray(nm_result.x, dtype=float)
+                        best_val = -nm_result.fun
+                        print(f"[REFINE] NM improved score to {best_val:.6e}")
+                    else:
+                        print(f"[REFINE] NM did not improve ({-nm_result.fun:.6e} vs {best_val:.6e})")
+
+                    # Update result_array with refined point
+                    for i, key in enumerate(starting_point_keys):
+                        result_array[key] = best_theta[i]
+                    add_kwargs['chi2'] = result_array['chi2']
+                    final_overlap_refined = calculate_detection_overlap(
+                        result_array['m1'], result_array['m2'], result_array['a'],
+                        result_array['p0'], result_array['e0'], ctx['Y0'],
+                        ctx['dist'], ctx['qS'], ctx['phiS'], ctx['qK'], ctx['phiK'],
+                        result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],
+                        add_kwargs, maximize_phase=False, **temp_dict)
+                    print(f"[REFINE] Final overlap after NM: {final_overlap_refined:.6f}")
+
+                    refine_out = {
+                        'optimizer': 'paris+de+nm',
+                        'best_point': best_theta.tolist(),
+                        'best_score': best_val,
+                        'final_overlap': float(final_overlap_refined),
+                    }
+                    Config.save_results_with_config(
+                        cfg=cfg,
+                        results=refine_out,
+                        save_dir=idx_dir,
+                        filename_prefix=f"opt_refined_{target_func}_id_{id}")
+                    np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
+
+                except Exception as exc:
+                    print(f"[WARN] NM refinement failed: {exc}")
+
         # ---------------------------
         # Global failure handler
         # ---------------------------
         except Exception as exc:
             print(f"[WARN] PARIS optimization failed: {exc}")
-        
+
         return result_array
             
 
