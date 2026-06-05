@@ -62,8 +62,9 @@ class Config:
         self.nm_xatol = 1e-6
         self.using_evec = False
         self.seed_cloud = 200
-        self.paris_seed_n = 80
+        self.paris_seed_n = 100
         self.paris_niterations = 2000
+        self.paris_temperature = 100.0  # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
         self.de_maxiter = 1000
         self.nm_maxiter = 10000
@@ -76,13 +77,12 @@ class Config:
         # If True, after PARIS runs DE(de_refine_maxiter steps) then Nelder-Mead
         # from the PARIS best point to pinpoint the peak.
         self.refine_after_paris = True
-        # DE refinement uses popsize=2 so de_refine_maxiter ≈ total function evaluations.
-        # With ndim=5 and popsize=2: pop=10, so 500 evals ≈ 50 generations (~42 min for EMRI).
-        self.de_refine_maxiter = 50    # generations (≈500 evals with popsize=2, ndim=5)
-        self.de_refine_popsize = 2     # small population — we already have a good start from PARIS
-        # NM refinement: short polish only (colleague uses maxiter=300, maxfev=300)
-        self.nm_refine_maxiter = 300
-        self.nm_refine_maxfev  = 300
+        # DE: popsize=5, ndim=5 → pop=25, 100 gen → 2500 evals (~7 min for EMRI)
+        self.de_refine_maxiter = 100   # generations
+        self.de_refine_popsize = 5
+        # NM refinement
+        self.nm_refine_maxiter = 1000
+        self.nm_refine_maxfev  = 1000
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
         self.refine_prior_sigma_range = 15.0  # tighter bounds for DE/NM (vs 28 for PARIS)
 

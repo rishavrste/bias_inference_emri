@@ -43,6 +43,7 @@ _PARIS_REF_CENTER = None          # type: Optional[np.ndarray]
 _PARIS_SPREAD_SCALE = None        # type: Optional[float]
 _PARIS_OBJECTIVE = None           # type: Optional[callable]
 _PARIS_TARGET_KIND = None         # type: Optional[str]  # 'optimal_snr', 'optimal_snr_phase_max', 'phase_match', 'time_max'
+_PARIS_TEMPERATURE = 1.0          # type: float  # divide score by this to flatten landscape (>1 = more exploratory)
 _TARGET_SNR = None
 # Fisher-parallelotope affine prior (primary for this script)
 _PARIS_AFFINE_CENTER = None       # type: Optional[np.ndarray]
@@ -133,7 +134,7 @@ def paris_log_density(params):
 
     def eval_one(x):
         try:
-            val = float(_PARIS_OBJECTIVE(x))
+            val = float(_PARIS_OBJECTIVE(x)) / _PARIS_TEMPERATURE
         except Exception:
             return float('-inf')
         return val
@@ -531,13 +532,14 @@ def run_paris(ndim: int,
     # Configure global context for top-level callables
     global _PARIS_REF_CENTER, _PARIS_SPREAD_SCALE, _PARIS_OBJECTIVE, _PARIS_TARGET_KIND, _PARIS_EARLY_STOP_HIT
     global _PARIS_AFFINE_CENTER, _PARIS_AFFINE_Q, _PARIS_AFFINE_B, _PARIS_DIM
-    global _PARIS_USE_ELLIPSE
+    global _PARIS_USE_ELLIPSE, _PARIS_TEMPERATURE
     _PARIS_REF_CENTER = np.asarray(prior_center, dtype=float).copy()
     _PARIS_SPREAD_SCALE = float(spread_scale)
     _PARIS_OBJECTIVE = score_func
     _PARIS_TARGET_KIND = target_kind
     _PARIS_EARLY_STOP_HIT = False
     _PARIS_USE_ELLIPSE = bool(use_ellipse)
+    _PARIS_TEMPERATURE = float(paris_conf.get('paris_temperature', 1.0))
 
     # Configure Fisher-affine prior if provided
     if affine_Q is not None and affine_b is not None:
@@ -1652,6 +1654,7 @@ if __name__ == "__main__":
     paris_conf['spread_scale'] = cfg.spread_scale
     paris_conf['seed_cloud'] = cfg.seed_cloud
     paris_conf['paris_seed_n'] = cfg.paris_seed_n
+    paris_conf['paris_temperature'] = cfg.paris_temperature
 
     def _find_latest_starting_point(base_dir_i, target_func):
         """Return the highest-numbered starting_point_N.npy from any previous

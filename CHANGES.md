@@ -767,3 +767,31 @@ Walltime guide (single grid point, GPU, PARIS optimizer):
 | `start_index` / `end_index` | integers | Grid points to process |
 | `optimizer` | `paris` \| `nelder-mead` \| `differential_evolution` | Optimiser |
 | `target_func` | `optimal_snr` \| `chi2_match` \| `time_max` | Objective |
+
+---
+
+## Round 2 tuning (2026-06-05) — improved settings for stuck points
+
+Changes applied to escape local basins in the 0PA EMRI grid.
+
+### src/config_paris.py
+
+1. `paris_seed_n`: 80 → **100**
+2. `paris_temperature`: new field, **100.0** — score divided by this in `paris_log_density`; flattens the landscape so PARIS explores more broadly
+3. `de_refine_maxiter`: 50 → **100** generations
+4. `de_refine_popsize`: 2 → **5** (pop=25 with ndim=5; ~2500 evals per DE run, ~7 min)
+5. `nm_refine_maxiter` / `nm_refine_maxfev`: 300 → **1000**
+
+### src/inference.py
+
+1. Added `_PARIS_TEMPERATURE = 1.0` module global (default 1.0 = no change)
+2. In `paris_log_density.eval_one`: `return val` → `return val / _PARIS_TEMPERATURE`
+3. In `run_paris`: added `_PARIS_TEMPERATURE = float(paris_conf.get('paris_temperature', 1.0))` to the global-setter block
+4. In `paris_conf` dict construction: added `paris_conf['paris_temperature'] = cfg.paris_temperature`
+
+### src/rerun_stuck.sh (new file)
+
+Submits individual PBS jobs for each 0PA EMRI point with overlap < 0.97:
+```bash
+bash src/rerun_stuck.sh
+```
