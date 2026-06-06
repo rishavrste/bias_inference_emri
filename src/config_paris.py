@@ -67,7 +67,7 @@ class Config:
         self.paris_temperature = 1.0    # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
         self.de_maxiter = 1000
-        self.de_workers = -1          # -1 = all CPUs; 1 = single-threaded
+        self.de_workers = 1           # 1 = single-threaded (FEW CUDA not thread-safe)
         self.nm_maxiter = 10000
         self.target_func = 'optimal_snr'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
         self.optimizer = 'differential_evolution'  # 'nelder-mead' | 'paris' | 'differential_evolution'
