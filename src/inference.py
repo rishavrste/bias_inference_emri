@@ -483,7 +483,7 @@ def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, xat
 from scipy.optimize import differential_evolution
 def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int = 1000, tol: float = 1e-4, atol: float = 1e-5,x0: Optional[np.ndarray] = None,
                                     fisher_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,init='sobol',seed: Optional[int] = 42,
-                                    popsize: int = 15):
+                                    popsize: int = 15, callback=None):
     if fisher_bounds is not None:
         bounds = fisher_bounds
     else:
@@ -503,6 +503,7 @@ def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int 
         seed=seed,
         init=init,
         popsize=popsize,
+        callback=callback,
     )
     return res
 
@@ -1018,7 +1019,18 @@ def main(signal_param_array,
                     score_val = objective(theta)
                     return -float(score_val)
                 
-                print(f"theta0, for debug, remove: {theta0}")
+                _de_gen1 = [0]
+                _de_t1_start = time.time()
+                def _de_stage1_callback(xk, convergence):
+                    _de_gen1[0] += 1
+                    g = _de_gen1[0]
+                    if g % 50 == 0:
+                        elapsed = (time.time() - _de_t1_start) / 60
+                        score = -float(bounded_objective(xk))
+                        print(f"{_ts()} [DE stage-1] gen={g:4d}/{cfg.de_maxiter}  "
+                              f"best_overlap={score:.6e}  convergence={convergence:.4f}  "
+                              f"elapsed={elapsed:.1f}min")
+                    return False
 
                 result = differential_evolution_optimize(
                     theta0=theta0,
@@ -1027,6 +1039,7 @@ def main(signal_param_array,
                     maxiter=cfg.de_maxiter,
                     tol=tol,
                     seed=seed,
+                    callback=_de_stage1_callback,
                 )
                 best_score = -float(result.fun)
                 tracker.update(result.x, best_score)
