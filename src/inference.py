@@ -974,7 +974,20 @@ def main(signal_param_array,
     elif optimizer == 'differential_evolution':
                 # Constrain search to remain within relative deviation of original (ctx-based) parameters
             tol = 1e-8 #1e-8 1pa emri #1e-6
-            theta_ref = theta0.copy()
+            # Centre DE bounds on the TRUE SIGNAL (ctx) so DE can escape stuck basins
+            # regardless of where the warm-start ended up.  theta0 (warm-start) may be
+            # outside these bounds when it is a stuck PARIS result.
+            _signal_keys = ['m1', 'm2', 'a', 'p0', 'e0']
+            if parameter_selected == 'intrinsic_phase':
+                _signal_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0']
+            if run_type == '1pa_vs_2pa':
+                _signal_keys = [k for k in _signal_keys] + ['chi2']
+                if parameter_selected != 'intrinsic_phase':
+                    _signal_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2']
+            theta_signal = np.array([ctx[k] for k in _signal_keys[:ndim]], dtype=float)
+            theta_ref = theta_signal
+            print(f"DE bounds centred on signal: {dict(zip(_signal_keys[:ndim], theta_signal))}")
+            print(f"  (warm-start theta0={theta0})")
             try:
                 import cupy as cP
                 USE_GPU = True
@@ -1032,7 +1045,7 @@ def main(signal_param_array,
                     return False
 
                 result = differential_evolution_optimize(
-                    theta0=theta0,
+                    theta0=theta_signal,
                     objective=bounded_objective,
                     fisher_bounds=bounds,
                     maxiter=cfg.de_maxiter,
