@@ -1046,7 +1046,7 @@ def main(signal_param_array,
                 def _de_stage1_callback(xk, convergence):
                     _de_gen1[0] += 1
                     g = _de_gen1[0]
-                    if g % 10 == 0:
+                    if g % 50 == 0:
                         elapsed = (time.time() - _de_t1_start) / 60
                         score = -float(bounded_objective(xk))
                         print(f"{_ts()} [DE stage-1] gen={g:4d}/{cfg.de_maxiter}  "
