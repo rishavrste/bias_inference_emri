@@ -1500,13 +1500,33 @@ def main(signal_param_array,
                                       best_theta[i] + diag_sigma_full_r[i]*_rpr)
                                      for i in range(ndim)]
                     _de_gen = [0]
-                    def neg_obj(theta):
-                        try:
-                            return -float(objective(theta))
-                        except Exception:
-                            # Waveform too short (plunging orbit) or other
-                            # generation failure — treat as infeasible point.
-                            return np.inf
+                    best_theta_r = best_theta  # safe default; overwritten below
+                    # In intrinsic mode, extend refinement to also optimise
+                    # Phi_phi0 and Phi_r0 jointly with the intrinsic params.
+                    _refine_with_phase = (parameter_selected == 'intrinsic')
+                    if _refine_with_phase:
+                        _phi0_init = float(result_array['Phi_phi0'])
+                        _phir0_init = float(result_array['Phi_r0'])
+                        best_theta_r = np.append(best_theta, [_phi0_init, _phir0_init])
+                        refine_bounds_r = refine_bounds + [(0.0, 2*np.pi), (0.0, 2*np.pi)]
+                        def neg_obj(theta):
+                            try:
+                                return -float(calculate_detection_overlap(
+                                    theta[0], theta[1], theta[2], theta[3], theta[4],
+                                    ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'],
+                                    ctx['qK'], ctx['phiK'],
+                                    theta[5], ctx['Phi_theta0'], theta[6],
+                                    add_kwargs, maximize_phase=False, **temp_dict))
+                            except Exception:
+                                return np.inf
+                    else:
+                        best_theta_r = best_theta
+                        refine_bounds_r = refine_bounds
+                        def neg_obj(theta):
+                            try:
+                                return -float(objective(theta))
+                            except Exception:
+                                return np.inf
                     def _de_callback(xk, convergence):
                         _de_gen[0] += 1
                         if _de_gen[0] % 10 == 0:
@@ -1514,9 +1534,9 @@ def main(signal_param_array,
                                   f"score={-neg_obj(xk):.6e}  convergence={convergence:.4f}")
                         return False
                     de_result = differential_evolution_optimize(
-                        theta0=best_theta,
+                        theta0=best_theta_r,
                         objective=neg_obj,
-                        fisher_bounds=refine_bounds,
+                        fisher_bounds=refine_bounds_r,
                         maxiter=cfg.de_refine_maxiter,
                         seed=seed,
                         init='latinhypercube',
@@ -1524,7 +1544,7 @@ def main(signal_param_array,
                     )
                     _de_elapsed = (time.time() - _t_de_start) / 60
                     if -de_result.fun > best_val:
-                        best_theta = np.asarray(de_result.x, dtype=float)
+                        best_theta_r = np.asarray(de_result.x, dtype=float)
                         best_val = -de_result.fun
                         print(f"{_ts()} [REFINE] DE improved score to {best_val:.6e}  "
                               f"({_de_elapsed:.1f} min, {de_result.nfev} evals)")
@@ -1543,7 +1563,7 @@ def main(signal_param_array,
                 _t_nm_start = time.time()
                 try:
                     nm_result = nelder_mead_optimize(
-                        best_theta,
+                        best_theta_r,
                         neg_obj,
                         maxiter=cfg.nm_refine_maxiter,
                         xatol=cfg.nm_xatol,
@@ -1551,7 +1571,7 @@ def main(signal_param_array,
                     )
                     _nm_elapsed = (time.time() - _t_nm_start) / 60
                     if -nm_result.fun > best_val:
-                        best_theta = np.asarray(nm_result.x, dtype=float)
+                        best_theta_r = np.asarray(nm_result.x, dtype=float)
                         best_val = -nm_result.fun
                         print(f"{_ts()} [REFINE] NM improved score to {best_val:.6e}  "
                               f"({_nm_elapsed:.1f} min, {nm_result.nfev} evals, "
@@ -1561,9 +1581,15 @@ def main(signal_param_array,
                               f"({-nm_result.fun:.6e} vs {best_val:.6e}, "
                               f"{_nm_elapsed:.1f} min, converged={nm_result.success})")
 
-                    # Update result_array with refined point
+                    # Unpack best point — intrinsic params first, then phases if extended
                     for i, key in enumerate(starting_point_keys):
-                        result_array[key] = best_theta[i]
+                        result_array[key] = best_theta_r[i]
+                    if _refine_with_phase:
+                        result_array['Phi_phi0'] = float(best_theta_r[5])
+                        result_array['Phi_r0']   = float(best_theta_r[6])
+                        print(f"[REFINE] Best phases: Phi_phi0={best_theta_r[5]:.6f}  "
+                              f"Phi_r0={best_theta_r[6]:.6f}  "
+                              f"(signal: {ctx['Phi_phi0']:.6f}, {ctx['Phi_r0']:.6f})")
                     add_kwargs['chi2'] = result_array['chi2']
                     final_overlap_refined = calculate_detection_overlap(
                         result_array['m1'], result_array['m2'], result_array['a'],
@@ -1585,6 +1611,7 @@ def main(signal_param_array,
                         save_dir=idx_dir,
                         filename_prefix=f"opt_refined_{target_func}_id_{id}")
                     np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
+                    np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
 
                 except Exception as exc:
                     import traceback

@@ -71,7 +71,7 @@ class Config:
         self.target_func = 'optimal_snr'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
         self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
         self.include_noise = False
-        self.prior_sigma_range = 28.0
+        self.prior_sigma_range = 40.0
 
         # --- Post-PARIS refinement ---
         # If True, after PARIS runs DE(de_refine_maxiter steps) then Nelder-Mead
