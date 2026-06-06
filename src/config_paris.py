@@ -66,7 +66,10 @@ class Config:
         self.paris_niterations = 2000
         self.paris_temperature = 1.0    # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
-        self.de_maxiter = 1000
+        # Stage-1 DE: popsize=5, ndim=5 → pop=25, ~5.6s/eval serial
+        # 30 gen max × 25 evals × 5.6s ≈ 70 min; early-stop via atol/tol
+        self.de_maxiter = 30
+        self.de_popsize = 5
         self.de_workers = 1           # 1 = single-threaded (FEW CUDA not thread-safe)
         self.nm_maxiter = 10000
         self.target_func = 'optimal_snr'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
@@ -74,13 +77,12 @@ class Config:
         self.include_noise = False
         self.prior_sigma_range = 30.0
 
-        # --- Post-PARIS refinement ---
-        # If True, after PARIS runs DE(de_refine_maxiter steps) then Nelder-Mead
-        # from the PARIS best point to pinpoint the peak.
+        # --- Post-DE refinement ---
+        # Narrow DE (tight bounds) then Nelder-Mead with phases from best DE point.
         self.refine_after_paris = True
-        # DE: popsize=5, ndim=5 → pop=25, 100 gen → 2500 evals (~7 min for EMRI)
-        self.de_refine_maxiter = 100   # generations
-        self.de_refine_popsize = 5
+        # DE refine: popsize=3, ndim=5→15 or ndim=7→21 evals/gen; 5 gen max
+        self.de_refine_maxiter = 5     # generations
+        self.de_refine_popsize = 3
         # NM refinement
         self.nm_refine_maxiter = 1000
         self.nm_refine_maxfev  = 1000
