@@ -1261,8 +1261,10 @@ def main(signal_param_array,
                     print(f"[WARN] NM phase polish failed: {exc_nm}\n{traceback.format_exc()}")
 
             except Exception as exc:
-                print(f"[ERROR] Differential Evolution optimization failed: {exc}")
-            
+                import traceback
+                print(f"[ERROR] Differential Evolution optimization failed: "
+                      f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+
             return result_array
                 
                 
