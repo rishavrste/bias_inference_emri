@@ -1136,7 +1136,117 @@ def main(signal_param_array,
                                         save_dir=idx_dir,
                                         filename_prefix=f"opt_differential_evolution_{target_func}_id_{id}"
                                     )
-    
+
+                # ---------------------------
+                # Post-DE refinement: narrow DE then Nelder-Mead (with phases)
+                # Mirrors the refine_after_paris block in the PARIS path.
+                # ---------------------------
+                print(f"\n{_ts()} {'='*55}")
+                print(f"{_ts()} STAGE 2 (REFINE): Differential Evolution "
+                      f"({cfg.de_refine_maxiter} gen, popsize={cfg.de_refine_popsize})")
+                print(f"{_ts()} {'='*55}")
+                _t_de_refine_start = time.time()
+                try:
+                    _de_best = np.asarray(result.x, dtype=float)
+                    _rpr = cfg.refine_prior_sigma_range
+                    _refine_bounds = [(
+                        _de_best[i] - diag_sigma_fisher[i] * _rpr,
+                        _de_best[i] + diag_sigma_fisher[i] * _rpr
+                    ) for i in range(ndim)]
+                    _refine_with_phase = (parameter_selected == 'intrinsic')
+                    if _refine_with_phase:
+                        _phi0_init = float(result_array['Phi_phi0'])
+                        _phir0_init = float(result_array['Phi_r0'])
+                        _de_best_r = np.append(_de_best, [_phi0_init, _phir0_init])
+                        _refine_bounds_r = _refine_bounds + [(0.0, 2*np.pi), (0.0, 2*np.pi)]
+                        def _neg_obj_r(theta):
+                            try:
+                                return -float(calculate_detection_overlap(
+                                    theta[0], theta[1], theta[2], theta[3], theta[4],
+                                    ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'],
+                                    ctx['qK'], ctx['phiK'],
+                                    theta[5], ctx['Phi_theta0'], theta[6],
+                                    add_kwargs, maximize_phase=False, **temp_dict))
+                            except Exception:
+                                return np.inf
+                    else:
+                        _de_best_r = _de_best
+                        _refine_bounds_r = _refine_bounds
+                        def _neg_obj_r(theta):
+                            try:
+                                return -float(objective(theta))
+                            except Exception:
+                                return np.inf
+                    _refine_val = -_neg_obj_r(_de_best_r)
+                    _de_refine_result = differential_evolution_optimize(
+                        theta0=_de_best_r,
+                        objective=_neg_obj_r,
+                        fisher_bounds=_refine_bounds_r,
+                        maxiter=cfg.de_refine_maxiter,
+                        seed=seed,
+                        init='latinhypercube',
+                        popsize=cfg.de_refine_popsize,
+                    )
+                    _de_refine_elapsed = (time.time() - _t_de_refine_start) / 60
+                    if -_de_refine_result.fun > _refine_val:
+                        _de_best_r = np.asarray(_de_refine_result.x, dtype=float)
+                        _refine_val = -_de_refine_result.fun
+                        print(f"{_ts()} [REFINE] DE improved overlap to {_refine_val:.6e}  "
+                              f"({_de_refine_elapsed:.1f} min, {_de_refine_result.nfev} evals)")
+                    else:
+                        print(f"{_ts()} [REFINE] DE did not improve "
+                              f"({-_de_refine_result.fun:.6e} vs {_refine_val:.6e}, "
+                              f"{_de_refine_elapsed:.1f} min, {_de_refine_result.nfev} evals)")
+                except Exception as exc_der:
+                    import traceback
+                    print(f"{_ts()} [WARN] DE refinement failed: {exc_der}\n{traceback.format_exc()}")
+
+                print(f"\n{_ts()} {'='*55}")
+                print(f"{_ts()} STAGE 3 (REFINE): Nelder-Mead phase polish "
+                      f"(maxiter={cfg.nm_refine_maxiter})")
+                print(f"{_ts()} {'='*55}")
+                _t_nm_refine_start = time.time()
+                try:
+                    nm_refine_result = nelder_mead_optimize(
+                        _de_best_r,
+                        _neg_obj_r,
+                        maxiter=cfg.nm_refine_maxiter,
+                        xatol=cfg.nm_xatol,
+                        fatol=cfg.nm_fatol,
+                    )
+                    _nm_refine_elapsed = (time.time() - _t_nm_refine_start) / 60
+                    if -nm_refine_result.fun > _refine_val:
+                        _de_best_r = np.asarray(nm_refine_result.x, dtype=float)
+                        _refine_val = -nm_refine_result.fun
+                        print(f"{_ts()} [REFINE] NM improved overlap to {_refine_val:.6e}  "
+                              f"({_nm_refine_elapsed:.1f} min, {nm_refine_result.nfev} evals, "
+                              f"converged={nm_refine_result.success})")
+                    else:
+                        print(f"{_ts()} [REFINE] NM did not improve "
+                              f"({-nm_refine_result.fun:.6e} vs {_refine_val:.6e}, "
+                              f"{_nm_refine_elapsed:.1f} min, converged={nm_refine_result.success})")
+                    for i, key in enumerate(param_names_to_infer):
+                        result_array[key] = _de_best_r[i]
+                    if _refine_with_phase:
+                        result_array['Phi_phi0'] = float(_de_best_r[5])
+                        result_array['Phi_r0']   = float(_de_best_r[6])
+                        print(f"[REFINE] Best phases: Phi_phi0={_de_best_r[5]:.6f}  "
+                              f"Phi_r0={_de_best_r[6]:.6f}  "
+                              f"(signal: {ctx['Phi_phi0']:.6f}, {ctx['Phi_r0']:.6f})")
+                    add_kwargs['chi2'] = result_array['chi2']
+                    final_overlap_refined = calculate_detection_overlap(
+                        result_array['m1'], result_array['m2'], result_array['a'],
+                        result_array['p0'], result_array['e0'], ctx['Y0'],
+                        ctx['dist'], ctx['qS'], ctx['phiS'], ctx['qK'], ctx['phiK'],
+                        result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],
+                        add_kwargs, maximize_phase=False, **temp_dict)
+                    print(f"[REFINE] Final overlap after NM: {final_overlap_refined:.6f}")
+                    np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
+                    np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                except Exception as exc_nm:
+                    import traceback
+                    print(f"[WARN] NM phase polish failed: {exc_nm}\n{traceback.format_exc()}")
+
             except Exception as exc:
                 print(f"[ERROR] Differential Evolution optimization failed: {exc}")
             

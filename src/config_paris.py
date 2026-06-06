@@ -64,14 +64,14 @@ class Config:
         self.seed_cloud = 200
         self.paris_seed_n = 100
         self.paris_niterations = 2000
-        self.paris_temperature = 100.0  # divide score by this to flatten landscape; >1 is more exploratory
+        self.paris_temperature = 1.0    # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
         self.de_maxiter = 1000
         self.nm_maxiter = 10000
         self.target_func = 'optimal_snr'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
-        self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
+        self.optimizer = 'differential_evolution'  # 'nelder-mead' | 'paris' | 'differential_evolution'
         self.include_noise = False
-        self.prior_sigma_range = 40.0
+        self.prior_sigma_range = 30.0
 
         # --- Post-PARIS refinement ---
         # If True, after PARIS runs DE(de_refine_maxiter steps) then Nelder-Mead
