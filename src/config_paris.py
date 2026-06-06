@@ -62,7 +62,7 @@ class Config:
         self.nm_xatol = 1e-6
         self.using_evec = False
         self.seed_cloud = 200
-        self.paris_seed_n = 100
+        self.paris_seed_n = 80
         self.paris_niterations = 2000
         self.paris_temperature = 1.0    # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
@@ -72,8 +72,8 @@ class Config:
         self.de_popsize = 15
         self.de_workers = 1           # 1 = single-threaded (FEW CUDA not thread-safe)
         self.nm_maxiter = 10000
-        self.target_func = 'optimal_snr'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
-        self.optimizer = 'differential_evolution'  # 'nelder-mead' | 'paris' | 'differential_evolution'
+        self.target_func = 'optimal_snr_phase_max'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
+        self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
         self.include_noise = False
         self.prior_sigma_range = 30.0
 
