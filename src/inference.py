@@ -1251,50 +1251,51 @@ def main(signal_param_array,
             )
 
             # ---------------------------
-            # Extract best point
+            # Extract best point (PARIS path only)
             # ---------------------------
-            def extract_best_point():
-                try:
-                    pts = sampler.searched_points_list
-                    logs = sampler.searched_log_densities_list
+            if not refine_only:
+                def extract_best_point():
+                    try:
+                        pts = sampler.searched_points_list
+                        logs = sampler.searched_log_densities_list
 
-                    if not pts or not logs:
-                        raise ValueError("Empty PARIS search results")
+                        if not pts or not logs:
+                            raise ValueError("Empty PARIS search results")
 
-                    # best_unit = pts[0][int(np.argmax(logs[0]))]
-                    best_unit = max((pts[i][np.argmax(logs[i])] for i in range(len(pts))),key=lambda u: paris_log_density(paris_prior_transform(u.reshape(1,-1)))[0])
-                    return prior_transform(best_unit)
+                        # best_unit = pts[0][int(np.argmax(logs[0]))]
+                        best_unit = max((pts[i][np.argmax(logs[i])] for i in range(len(pts))),key=lambda u: paris_log_density(paris_prior_transform(u.reshape(1,-1)))[0])
+                        return prior_transform(best_unit)
 
-                except Exception as e:
-                    print(f"[WARN] Best extraction failed: {e}, using fallback")
+                    except Exception as e:
+                        print(f"[WARN] Best extraction failed: {e}, using fallback")
 
-                    fallback = getattr(sampler, "_fallback_best_point", None)
-                    if fallback is None:
-                        raise RuntimeError("No fallback best point available") from e
+                        fallback = getattr(sampler, "_fallback_best_point", None)
+                        if fallback is None:
+                            raise RuntimeError("No fallback best point available") from e
 
-                    return np.asarray(fallback, dtype=float)
+                        return np.asarray(fallback, dtype=float)
 
-            best_theta = extract_best_point()
+                best_theta = extract_best_point()
 
-            if best_theta is None:
-                print("[WARN] Using starting point as fallback")
-                best_theta = theta0
+                if best_theta is None:
+                    print("[WARN] Using starting point as fallback")
+                    best_theta = theta0
 
-            best_theta = np.asarray(best_theta, dtype=float)
+                best_theta = np.asarray(best_theta, dtype=float)
 
-            # Transform if still in unit cube
-            if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
-                best_theta = prior_transform(best_theta)
+                # Transform if still in unit cube
+                if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
+                    best_theta = prior_transform(best_theta)
 
-            best_val = float(objective(best_theta))
-            print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
-                  f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
+                best_val = float(objective(best_theta))
+                print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
+                      f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
 
-            # Checkpoint: save raw PARIS best BEFORE polish so a crash during
-            # the ~40-min Gaussian polish does not lose the PARIS result.
-            _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
-            np.save(_ckpt_path, best_theta)
-            print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
+                # Checkpoint: save raw PARIS best BEFORE polish so a crash during
+                # the ~40-min Gaussian polish does not lose the PARIS result.
+                _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
+                np.save(_ckpt_path, best_theta)
+                print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
 
             # ---------------------------
             # Local polishing (Gaussian steps)
