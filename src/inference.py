@@ -1528,6 +1528,11 @@ def main(signal_param_array,
                                 return -float(objective(theta))
                             except Exception:
                                 return np.inf
+                    # When neg_obj returns -overlap (7D phase path), it is in [0,1]
+                    # while best_val is the PARIS score (~SNR*overlap).  Track a
+                    # separate comparison baseline in the same units as neg_obj.
+                    _refine_val = (-neg_obj(best_theta_r)
+                                   if _refine_with_phase else best_val)
                     def _de_callback(xk, convergence):
                         _de_gen[0] += 1
                         if _de_gen[0] % 10 == 0:
@@ -1544,14 +1549,14 @@ def main(signal_param_array,
                         popsize=cfg.de_refine_popsize,
                     )
                     _de_elapsed = (time.time() - _t_de_start) / 60
-                    if -de_result.fun > best_val:
+                    if -de_result.fun > _refine_val:
                         best_theta_r = np.asarray(de_result.x, dtype=float)
-                        best_val = -de_result.fun
-                        print(f"{_ts()} [REFINE] DE improved score to {best_val:.6e}  "
+                        _refine_val = -de_result.fun
+                        print(f"{_ts()} [REFINE] DE improved score to {_refine_val:.6e}  "
                               f"({_de_elapsed:.1f} min, {de_result.nfev} evals)")
                     else:
                         print(f"{_ts()} [REFINE] DE did not improve "
-                              f"({-de_result.fun:.6e} vs {best_val:.6e}, "
+                              f"({-de_result.fun:.6e} vs {_refine_val:.6e}, "
                               f"{_de_elapsed:.1f} min, {de_result.nfev} evals)")
                 except Exception as exc:
                     import traceback
@@ -1571,15 +1576,15 @@ def main(signal_param_array,
                         fatol=cfg.nm_fatol,
                     )
                     _nm_elapsed = (time.time() - _t_nm_start) / 60
-                    if -nm_result.fun > best_val:
+                    if -nm_result.fun > _refine_val:
                         best_theta_r = np.asarray(nm_result.x, dtype=float)
-                        best_val = -nm_result.fun
-                        print(f"{_ts()} [REFINE] NM improved score to {best_val:.6e}  "
+                        _refine_val = -nm_result.fun
+                        print(f"{_ts()} [REFINE] NM improved score to {_refine_val:.6e}  "
                               f"({_nm_elapsed:.1f} min, {nm_result.nfev} evals, "
                               f"converged={nm_result.success})")
                     else:
                         print(f"{_ts()} [REFINE] NM did not improve "
-                              f"({-nm_result.fun:.6e} vs {best_val:.6e}, "
+                              f"({-nm_result.fun:.6e} vs {_refine_val:.6e}, "
                               f"{_nm_elapsed:.1f} min, converged={nm_result.success})")
 
                     # Unpack best point — intrinsic params first, then phases if extended
