@@ -1012,12 +1012,11 @@ def main(signal_param_array,
                     print(f"  {param_names_to_infer[i]}: [{lower:.6e}, {upper:.6e}]")
 
                 def bounded_objective(theta: np.ndarray) -> float:
-                    # denom = np.abs(theta_ref) #+ 1e-30
-                    # rel = np.abs(np.asarray(theta) - theta_ref) / denom
-                    # if np.any(rel > tol):
-                    #     return 1e7
-                    score_val = objective(theta)
-                    return -float(score_val)
+                    try:
+                        score_val = objective(theta)
+                        return -float(score_val)
+                    except Exception:
+                        return np.inf  # invalid waveform — treat as worst score
                 
                 _de_gen1 = [0]
                 _de_t1_start = time.time()
