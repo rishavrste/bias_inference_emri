@@ -483,7 +483,7 @@ def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, xat
 from scipy.optimize import differential_evolution
 def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int = 1000, tol: float = 1e-4, atol: float = 1e-5,x0: Optional[np.ndarray] = None,
                                     fisher_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,init='sobol',seed: Optional[int] = 42,
-                                    popsize: int = 15, callback=None):
+                                    popsize: int = 15, callback=None, workers: int = 1):
     if fisher_bounds is not None:
         bounds = fisher_bounds
     else:
@@ -504,6 +504,7 @@ def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int 
         init=init,
         popsize=popsize,
         callback=callback,
+        workers=workers,
     )
     return res
 
@@ -1052,6 +1053,7 @@ def main(signal_param_array,
                     tol=tol,
                     seed=seed,
                     callback=_de_stage1_callback,
+                    workers=cfg.de_workers,
                 )
                 best_score = -float(result.fun)
                 tracker.update(result.x, best_score)
@@ -1211,6 +1213,7 @@ def main(signal_param_array,
                         seed=seed,
                         init='latinhypercube',
                         popsize=cfg.de_refine_popsize,
+                        workers=cfg.de_workers,
                     )
                     _de_refine_elapsed = (time.time() - _t_de_refine_start) / 60
                     if -_de_refine_result.fun > _refine_val:
@@ -1684,6 +1687,7 @@ def main(signal_param_array,
                         seed=seed,
                         init='latinhypercube',
                         popsize=cfg.de_refine_popsize,
+                        workers=cfg.de_workers,
                     )
                     _de_elapsed = (time.time() - _t_de_start) / 60
                     if -de_result.fun > _refine_val:
