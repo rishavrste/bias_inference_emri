@@ -1109,7 +1109,6 @@ def main(signal_param_array,
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
                         np.save(os.path.join(idx_dir, f"results_differential_evolution_{id+1}_time_{timestamp}.npy"), result_array)
-                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
                     case 6:
                         print(f"Optimized (m1, m2, a, p0, e0, chi2): {result.x}")
                         result_array = starting_point.copy()
@@ -1118,7 +1117,6 @@ def main(signal_param_array,
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
                         np.save(os.path.join(idx_dir, f"results_differential_evolution_time_{timestamp}.npy"), result_array)
-                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
 
                     case 7:
                         print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0): {result.x}")
@@ -1128,7 +1126,6 @@ def main(signal_param_array,
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
                         np.save(os.path.join(idx_dir, f"results_differential_evolution_{id+1}_time_{timestamp}.npy"), result_array)
-                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
 
                     case 8:
                         print(f"Optimized (m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2): {result.x}")
@@ -1138,7 +1135,6 @@ def main(signal_param_array,
                             result_array[key] = result.x[i]
                         print(f"Optimized parameters as array: {result_array}")
                         np.save(os.path.join(idx_dir, f"results_differential_evolution_{id+1}_time_{timestamp}.npy"), result_array)
-                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
 
                     case _:
                         print(f"Optimized parameters: {result.x}")
@@ -1152,6 +1148,11 @@ def main(signal_param_array,
                     maximize_phase=False,
                     **temp_dict)
                 print("Overlap of the best point:", final_overlap)
+                if final_overlap > initial_overlap:
+                    np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                    print(f"[SAVE] starting_point updated (DE): {final_overlap:.6f} > {initial_overlap:.6f}")
+                else:
+                    print(f"[SKIP] starting_point NOT updated (DE): {final_overlap:.6f} <= {initial_overlap:.6f} — warm-start kept")
                 out = {
                     'optimizer': 'differential_evolution',
                     'target_func': target_func,
@@ -1280,7 +1281,11 @@ def main(signal_param_array,
                         add_kwargs, maximize_phase=False, **temp_dict)
                     print(f"[REFINE] Final overlap after NM: {final_overlap_refined:.6f}")
                     np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
-                    np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                    if final_overlap_refined > initial_overlap:
+                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        print(f"[SAVE] starting_point updated (refined): {final_overlap_refined:.6f} > {initial_overlap:.6f}")
+                    else:
+                        print(f"[SKIP] starting_point NOT updated (refined): {final_overlap_refined:.6f} <= {initial_overlap:.6f} — warm-start kept")
                 except Exception as exc_nm:
                     import traceback
                     print(f"[WARN] NM phase polish failed: {exc_nm}\n{traceback.format_exc()}")
