@@ -484,6 +484,7 @@ from scipy.optimize import differential_evolution
 def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int = 1000, tol: float = 1e-4, atol: float = 1e-5,x0: Optional[np.ndarray] = None,
                                     fisher_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,init='sobol',seed: Optional[int] = 42,
                                     popsize: int = 15, callback=None, workers: int = 1):
+    from concurrent.futures import ThreadPoolExecutor
     if fisher_bounds is not None:
         bounds = fisher_bounds
     else:
@@ -493,7 +494,7 @@ def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int 
         print("\nApplying special bounds for chi2\n")
         bounds[-1] = (-1, 1)
         print("Later Bound are :", bounds)
-    res = differential_evolution(
+    de_kwargs = dict(
         func=objective,
         bounds=bounds,
         maxiter=maxiter,
@@ -504,8 +505,16 @@ def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int 
         init=init,
         popsize=popsize,
         callback=callback,
-        workers=workers,
     )
+    if workers == 1:
+        res = differential_evolution(**de_kwargs)
+    else:
+        # Use ThreadPoolExecutor (threads share memory, no pickling of closures
+        # needed, safe with CUDA contexts unlike multiprocessing fork).
+        max_w = None if workers == -1 else workers
+        print(f"[DE] Using ThreadPoolExecutor(max_workers={max_w}) for parallel population evaluation")
+        with ThreadPoolExecutor(max_workers=max_w) as executor:
+            res = differential_evolution(**de_kwargs, workers=executor.map)
     return res
 
 def run_paris(ndim: int,
