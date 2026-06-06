@@ -1924,13 +1924,17 @@ if __name__ == "__main__":
                            cache_dir=os.path.join(cfg.fisher_cache_dir, cfg.TYPE),
                            grid_index=i,
                            refine_only=_cli.refine_only)
-        existing_overlap = result_overlap_array[i]
+        # Reload from disk immediately before writing to avoid clobbering
+        # results written by concurrent jobs during our run.
+        _disk_result_array   = np.load(result_folder)
+        _disk_overlap_array  = np.load(overlap_folder)
+        existing_overlap = _disk_overlap_array[i]
         if existing_overlap == 0.0 or new_overlap > existing_overlap:
             result = list(result_dict.values())
-            result_array[i] = result
-            result_overlap_array[i] = new_overlap
-            np.save(result_folder, result_array)
-            np.save(overlap_folder, result_overlap_array)
+            _disk_result_array[i]  = result
+            _disk_overlap_array[i] = new_overlap
+            np.save(result_folder, _disk_result_array)
+            np.save(overlap_folder, _disk_overlap_array)
             print(f"[SAVE] Global result array updated for point {i}: overlap={new_overlap:.6f} (was {existing_overlap:.6f})")
         else:
             print(f"[SKIP] Global result array NOT updated for point {i}: {new_overlap:.6f} <= existing {existing_overlap:.6f}")
