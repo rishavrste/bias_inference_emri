@@ -1318,6 +1318,7 @@ def main(signal_param_array,
     elif optimizer == 'paris':
         # --- PARIS Optimization Block ---
 
+        _best_returned_overlap = float(initial_overlap)
         try:
         # if True:
             # ---------------------------
@@ -1621,6 +1622,7 @@ def main(signal_param_array,
                     maximize_phase=False,
                     **temp_dict)
             print("Overlap of the best point:", final_overlap)
+            _best_returned_overlap = float(final_overlap)
             out = {
                 "optimizer": "PARIS",
                 "target_func": target_func,
@@ -1777,6 +1779,7 @@ def main(signal_param_array,
                         result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],
                         add_kwargs, maximize_phase=False, **temp_dict)
                     print(f"[REFINE] Final overlap after NM: {final_overlap_refined:.6f}")
+                    _best_returned_overlap = float(final_overlap_refined)
 
                     refine_out = {
                         'optimizer': 'paris+de+nm',
@@ -1802,7 +1805,7 @@ def main(signal_param_array,
         except Exception as exc:
             print(f"[WARN] PARIS optimization failed: {exc}")
 
-        return result_array, float(initial_overlap)
+        return result_array, _best_returned_overlap
             
 
 if __name__ == "__main__":
