@@ -62,7 +62,9 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
     Indices: 0:m1, 1:m2, 2:a, 3:p0, 4:e0, [5:Phi_phi0, 6:Phi_r0], [5 or 7:chi2]
 
     - m1, m2  > 0
-    - a       in [-0.9999,  0.9999]
+    - a       in [-0.998,   0.998]   (stay clear of near-extremal Kerr where
+                                      waveform generation becomes numerically
+                                      unstable / returns NaN log-densities)
     - e0      in [1e-8,     1-1e-8]
     - chi2    in [-1.0,     1.0]    (index 5 when ndim==6, index 7 when ndim==8)
     """
@@ -74,7 +76,7 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         if x.shape[0] >= 2:
             x[1] = max(x[1], 1e-30)           # m2 > 0
         if x.shape[0] >= 3:
-            x[2] = np.clip(x[2], -0.9999, 0.9999)   # a (spin)
+            x[2] = np.clip(x[2], -0.998, 0.998)   # a (spin)
         if x.shape[0] >= 5:
             x[4] = np.clip(x[4], 1e-8, 1 - 1e-8)   # e0 (eccentricity)
         if x.shape[0] == 6:
@@ -87,7 +89,7 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         x[:, 0] = np.maximum(x[:, 0], 1e-30)        # m1 > 0
         x[:, 1] = np.maximum(x[:, 1], 1e-30)        # m2 > 0
         if x.shape[1] >= 3:
-            x[:, 2] = np.clip(x[:, 2], -0.9999, 0.9999)  # a (spin)
+            x[:, 2] = np.clip(x[:, 2], -0.998, 0.998)  # a (spin)
         if x.shape[1] >= 5:
             x[:, 4] = np.clip(x[:, 4], 1e-8, 1 - 1e-8)  # e0 (eccentricity)
         if x.shape[1] == 6:

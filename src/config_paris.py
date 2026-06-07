@@ -75,7 +75,7 @@ class Config:
         self.target_func = 'optimal_snr_phase_max'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
         self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
         self.include_noise = False
-        self.prior_sigma_range = 40.0
+        self.prior_sigma_range = 20.0
 
         # --- Post-DE refinement ---
         # Narrow DE then Nelder-Mead with phases from best DE point.
@@ -87,7 +87,7 @@ class Config:
         self.nm_refine_maxiter = 2000
         self.nm_refine_maxfev  = 1000
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
-        self.refine_prior_sigma_range = 20.0  # tighter bounds for DE/NM (vs prior_sigma_range for PARIS)
+        self.refine_prior_sigma_range = 10.0  # tighter bounds for DE/NM (vs prior_sigma_range for PARIS)
 
         # --- Misc ---
         self.output_text_file = "paris_optimization_results.txt"
