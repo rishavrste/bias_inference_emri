@@ -8,6 +8,9 @@
 # Full 1PA grid:
 #   qsub -J 0-24 -v RUN_TYPE=1pa_vs_2pa src/inference.pbs
 #
+# IMRI / IMRI_TAIL grids (default GRID_TYPE is EMRI):
+#   qsub -J 0-24 -v RUN_TYPE=0pa_vs_2pa,GRID_TYPE=IMRI_TAIL src/inference.pbs
+#
 # Refine-only (skip PARIS):
 #   qsub -v "GRID_START=0,REFINE_ONLY=1" src/inference.pbs
 #
@@ -43,6 +46,7 @@ module load singularity
 EXTRA_ARGS=""
 [ -n "$REFINE_ONLY" ] && EXTRA_ARGS="$EXTRA_ARGS --refine-only"
 [ -n "$RUN_TYPE"    ] && EXTRA_ARGS="$EXTRA_ARGS --run-type $RUN_TYPE"
+[ -n "$GRID_TYPE"   ] && EXTRA_ARGS="$EXTRA_ARGS --type $GRID_TYPE"
 
 singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_${IDX}.err.$PBS_JOBID"
 PYTHON=/home/svu/josh.mat/miniconda3/bin/python3

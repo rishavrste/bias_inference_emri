@@ -62,8 +62,8 @@ class Config:
         self.nm_xatol = 1e-6
         self.using_evec = False
         self.seed_cloud = 200
-        self.paris_seed_n = 80
-        self.paris_niterations = 2000
+        self.paris_seed_n = 120
+        self.paris_niterations = 3000
         self.paris_temperature = 1.0    # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
         # Stage-1 DE: ~0.144s/eval serial; popsize=15 → 75 members/gen
@@ -75,19 +75,19 @@ class Config:
         self.target_func = 'optimal_snr_phase_max'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
         self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
         self.include_noise = False
-        self.prior_sigma_range = 30.0
+        self.prior_sigma_range = 40.0
 
         # --- Post-DE refinement ---
         # Narrow DE then Nelder-Mead with phases from best DE point.
         self.refine_after_paris = True
         # DE refine: ~0.1s/eval (maximize_phase=False); 100 gen × popsize × ndim evals
-        self.de_refine_maxiter = 100   # generations
-        self.de_refine_popsize = 5
+        self.de_refine_maxiter = 150   # generations
+        self.de_refine_popsize = 8
         # NM refinement
-        self.nm_refine_maxiter = 1000
+        self.nm_refine_maxiter = 2000
         self.nm_refine_maxfev  = 1000
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
-        self.refine_prior_sigma_range = 15.0  # tighter bounds for DE/NM (vs 28 for PARIS)
+        self.refine_prior_sigma_range = 20.0  # tighter bounds for DE/NM (vs prior_sigma_range for PARIS)
 
         # --- Misc ---
         self.output_text_file = "paris_optimization_results.txt"

@@ -1819,14 +1819,21 @@ if __name__ == "__main__":
     _parser.add_argument('--run-type', dest='run_type', default=None,
                          choices=['0pa_vs_2pa', '1pa_vs_2pa'],
                          help='Override config run_type (also updates param_names_to_infer)')
+    _parser.add_argument('--type', dest='grid_type', default=None,
+                         choices=['IMRI', 'EMRI', 'IMRI_TAIL'],
+                         help='Override config TYPE (also updates param_file/result_file/basedir)')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
+    if _cli.grid_type is not None:
+        cfg.TYPE = _cli.grid_type
     if _cli.run_type is not None:
         cfg.run_type = _cli.run_type
         cfg.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2'] \
             if cfg.run_type == '1pa_vs_2pa' else ['m1', 'm2', 'a', 'p0', 'e0']
+    if _cli.grid_type is not None or _cli.run_type is not None:
         _pa = '0pa' if cfg.run_type == '0pa_vs_2pa' else '1pa'
+        cfg.param_file  = cfg.param_files[cfg.TYPE]
         cfg.result_file = cfg.result_files[cfg.TYPE].replace('.npy', f'_{_pa}.npy')
         cfg.basedir = f"/scratch/josh.mat/opt_grid/results/{cfg.TYPE}_{_pa}/"
     print("Start")
