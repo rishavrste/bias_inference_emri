@@ -168,7 +168,7 @@ def compute_fisher_parallelotope(ctx: dict,
 
     if F is None:
         sef = StableEMRIFisher(waveform_class=SuperKludgeWaveform,
-                           waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=False, odd_len=True)),
+                           waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=True, odd_len=True)),
                            waveform_generator = GenerateEMRIWaveform,
                            waveform_generator_kwargs= dict(return_list=False),
                            ResponseWrapper=ResponseWrapper,
@@ -394,16 +394,7 @@ def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     
     nchannels = signal.shape[0]
 
-    try:
-        h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
-    except Exception as exc:
-        # Near-merger waveforms (e.g. IMRI_TAIL) can plunge before reaching the
-        # requested Tobs for some sampled parameters, producing a trajectory
-        # shorter than the LISA response model expects
-        # (fastlisaresponse raises AssertionError: len(input_in) >= self.num_pts).
-        # Treat such points as having zero overlap rather than crashing the caller.
-        print(f"[WARN] waveform_response failed ({exc!r}); treating point as zero overlap")
-        return -np.inf
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
 
     PSD = fixed['PSD']
 

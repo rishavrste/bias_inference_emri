@@ -63,7 +63,7 @@ class Config:
         self.using_evec = False
         self.seed_cloud = 200
         self.paris_seed_n = 120
-        self.paris_niterations = 3000
+        self.paris_niterations = 1000  # cut from 3000 to get faster turnaround while validating IMRI_TAIL; raise once stable
         self.paris_temperature = 1.0    # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
         # Stage-1 DE: ~0.144s/eval serial; popsize=15 → 75 members/gen
