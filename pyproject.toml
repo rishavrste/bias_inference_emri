@@ -20,7 +20,6 @@ dependencies = [
     "pyemd>=1.1.0",
     "scipy>=1.13.1",
     "seaborn>=0.13.2",
-    "typing>=3.10.0.0",
 ]
 
 [tool.uv]

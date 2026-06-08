@@ -64,7 +64,7 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
     - m1, m2  > 0
     - a       in [-0.9999,  0.9999]
     - e0      in [1e-8,     1-1e-8]
-    - chi2    in [-1.0,     1.0]    (index 5 when ndim==6, index 7 when ndim==8)
+    - chi2    in [-0.999999999999,  0.999999999999]  (index 5 when ndim==6, index 7 when ndim==8)
     """
     x = np.asarray(theta, dtype=float).copy()
 
@@ -78,9 +78,9 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         if x.shape[0] >= 5:
             x[4] = np.clip(x[4], 1e-8, 1 - 1e-8)   # e0 (eccentricity)
         if x.shape[0] == 6:
-            x[5] = np.clip(x[5], -1.0, 1.0)         # chi2 (intrinsic, no phase)
+            x[5] = np.clip(x[5], -0.999999999999, 0.999999999999)   # chi2 (intrinsic, no phase)
         if x.shape[0] == 8:
-            x[7] = np.clip(x[7], -1.0, 1.0)         # chi2 (intrinsic + phase)
+            x[7] = np.clip(x[7], -0.999999999999, 0.999999999999)   # chi2 (intrinsic + phase)
         return x
 
     else:
@@ -91,9 +91,9 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         if x.shape[1] >= 5:
             x[:, 4] = np.clip(x[:, 4], 1e-8, 1 - 1e-8)  # e0 (eccentricity)
         if x.shape[1] == 6:
-            x[:, 5] = np.clip(x[:, 5], -1.0, 1.0)        # chi2 (intrinsic, no phase)
+            x[:, 5] = np.clip(x[:, 5], -0.999999999999, 0.999999999999)  # chi2 (intrinsic, no phase)
         if x.shape[1] == 8:
-            x[:, 7] = np.clip(x[:, 7], -1.0, 1.0)        # chi2 (intrinsic + phase)
+            x[:, 7] = np.clip(x[:, 7], -0.999999999999, 0.999999999999)  # chi2 (intrinsic + phase)
         return x
     
 def compute_fisher_parallelotope(ctx: dict,

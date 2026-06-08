@@ -13,7 +13,7 @@ class Config:
 
         # --- Identity / run type (must be defined before any derived values) ---
         self.TYPE = "EMRI"          # IMRI | EMRI | IMRI_TAIL
-        self.run_type = "0pa_vs_2pa"  # "0pa_vs_2pa" | "1pa_vs_2pa"
+        self.run_type = "1pa_vs_2pa"  # "0pa_vs_2pa" | "1pa_vs_2pa"
         self.parameter_selected = "intrinsic"  # "intrinsic" | "intrinsic_phase"
 
         # --- Parameters to infer / differentiate in Fisher ---
@@ -59,12 +59,12 @@ class Config:
         # --- Optimizer / sampler settings ---
         self.spread_scale = 0.4
         self.grid_index = 0.0
-        self.nm_xatol = 1e-6
+        self.nm_xatol = 1e-12
         self.using_evec = False
         self.seed_cloud = 200
-        self.paris_seed_n = 80
-        self.paris_niterations = 2000
-        self.nm_fatol = 1e-6
+        self.paris_seed_n = 20
+        self.paris_niterations = 500
+        self.nm_fatol = 1e-12
         self.de_maxiter = 1000
         self.nm_maxiter = 10000
         self.target_func = 'optimal_snr'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
@@ -78,13 +78,19 @@ class Config:
         self.refine_after_paris = True
         # DE refinement uses popsize=2 so de_refine_maxiter ≈ total function evaluations.
         # With ndim=5 and popsize=2: pop=10, so 500 evals ≈ 50 generations (~42 min for EMRI).
-        self.de_refine_maxiter = 50    # generations (≈500 evals with popsize=2, ndim=5)
+        self.de_refine_maxiter = 150   # generations (≈2400 evals with popsize=2, ndim=8)
         self.de_refine_popsize = 2     # small population — we already have a good start from PARIS
         # NM refinement: short polish only (colleague uses maxiter=300, maxfev=300)
-        self.nm_refine_maxiter = 300
-        self.nm_refine_maxfev  = 300
+        self.nm_refine_maxiter = 5000
+        self.nm_refine_maxfev  = 10000
+        # nm_fatol (1e-12) sits at the float64 noise floor for scores ~2e4
+        # (eps ~ 4.4e-12) -- NM can never satisfy it and just burns its eval
+        # budget without truly converging. The bias signal we're chasing is
+        # Delta_score ~ SNR * mismatch ~ 1e-4, so 1e-10 still resolves it
+        # with >1e6 margin while letting NM actually converge.
+        self.nm_refine_fatol   = 1e-10
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
-        self.refine_prior_sigma_range = 15.0  # tighter bounds for DE/NM (vs 28 for PARIS)
+        self.refine_prior_sigma_range = 5.0  # tighter bounds for DE/NM warm-start re-refinement (was 15.0)
 
         # --- Misc ---
         self.output_text_file = "paris_optimization_results.txt"

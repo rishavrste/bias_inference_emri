@@ -470,12 +470,12 @@ def objective_factory(target_func: str,
         raise ValueError(f"Unknown target_func: {target_func}")
         
 
-def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, xatol: float = 1e-10, fatol: float = 1e-12):
+def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, maxfev: int = 15000, xatol: float = 1e-10, fatol: float = 1e-12):
     res = minimize(
         objective,
         theta0,
         method='Nelder-Mead',
-        options={'maxiter': maxiter, 'maxfev': 15000, 'xatol': xatol, 'fatol': fatol,'adaptive': True},
+        options={'maxiter': maxiter, 'maxfev': maxfev, 'xatol': xatol, 'fatol': fatol,'adaptive': True},
     )
     return res
 
@@ -1192,6 +1192,16 @@ def main(signal_param_array,
                     print(f"[FISHER] Padded to ndim={ndim}: Fisher dims {n_fisher}, "
                           f"phase dims {ndim - n_fisher} (uniform ±pi prior)")
 
+                # Fisher cache is computed at snr_model (≈20); _TARGET_SNR is the
+                # inflated SNR (≈20,000).  sigma ∝ 1/SNR, so scale b down by
+                # sqrt(scale_applied) = _TARGET_SNR / snr_model so that the PARIS
+                # prior reflects the tighter uncertainty at the inflated SNR.
+                _snr_scale_paris = np.sqrt(float(fisher_meta.get('scale_applied', 1.0)))
+                if _snr_scale_paris > 1.0:
+                    b = b / _snr_scale_paris
+                    print(f"[FISHER] PARIS b SNR-scaled by 1/{_snr_scale_paris:.1f} "
+                          f"(snr_model → _TARGET_SNR)")
+
             except Exception as e:
                 raise RuntimeError(f"[FATAL] Fisher prior failed: {e}") from e
 
@@ -1252,6 +1262,8 @@ def main(signal_param_array,
             # Extract best point
             # ---------------------------
             def extract_best_point():
+                if refine_only:
+                    return best_theta  # already loaded from checkpoint; sampler was never run
                 try:
                     pts = sampler.searched_points_list
                     logs = sampler.searched_log_densities_list
@@ -1280,81 +1292,90 @@ def main(signal_param_array,
 
             best_theta = np.asarray(best_theta, dtype=float)
 
-            # Transform if still in unit cube
-            if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
-                best_theta = prior_transform(best_theta)
+            if not refine_only:
+                # Transform if still in unit cube (prior_transform only defined when PARIS ran)
+                if np.all((best_theta >= 0.0) & (best_theta <= 1.0)):
+                    best_theta = prior_transform(best_theta)
 
-            best_val = float(objective(best_theta))
-            print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
-                  f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
+                best_val = float(objective(best_theta))
+                print(f"{_ts()} PARIS done in {(time.time()-_t_paris_start)/3600:.2f}h  "
+                      f"best_score={best_val:.6e}  best_theta={best_theta.tolist()}")
 
-            # Checkpoint: save raw PARIS best BEFORE polish so a crash during
-            # the ~40-min Gaussian polish does not lose the PARIS result.
-            _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
-            np.save(_ckpt_path, best_theta)
-            print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
+                # Checkpoint: save raw PARIS best BEFORE polish so a crash during
+                # the ~40-min Gaussian polish does not lose the PARIS result.
+                _ckpt_path = os.path.join(idx_dir, f"checkpoint_paris_raw_{timestamp}.npy")
+                np.save(_ckpt_path, best_theta)
+                print(f"{_ts()} [CHECKPOINT] Raw PARIS best saved → {_ckpt_path}")
 
             # ---------------------------
-            # Local polishing (Gaussian steps)
+            # Local polishing (Gaussian steps) — skip in refine-only mode
             # ---------------------------
-            best_fit_points = signal_param_array
-            if parameter_selected == "intrinsic":
-                if run_type == '0pa_vs_2pa':
-                    best_fit_points[0:5] = best_theta
-                elif run_type == '1pa_vs_2pa':
-                    best_fit_points[0:5] = best_theta[0:5]
-                    best_fit_points[-1] = best_theta[5]
+            try:
+                if refine_only:
+                    raise RuntimeError("skip")
+                best_fit_points = signal_param_array.copy()
+                if parameter_selected == "intrinsic":
+                    if run_type == '0pa_vs_2pa':
+                        best_fit_points[0:5] = best_theta
+                    elif run_type == '1pa_vs_2pa':
+                        best_fit_points[0:5] = best_theta[0:5]
+                        best_fit_points[-1] = best_theta[5]
 
-            else:
-                if run_type == '0pa_vs_2pa':
-                    best_fit_points[0:5] = best_theta[0:5]
-                    best_fit_points[11] = best_theta[5]
-                    best_fit_points[13] = best_theta[6]
-                elif run_type == '1pa_vs_2pa':
-                    best_fit_points[0:5] = best_theta[0:5]
-                    best_fit_points[11] = best_theta[5]
-                    best_fit_points[13] = best_theta[6]
-                    best_fit_points[-1] = best_theta[7]
                 else:
-                    print("Unsupported Type")
+                    if run_type == '0pa_vs_2pa':
+                        best_fit_points[0:5] = best_theta[0:5]
+                        best_fit_points[11] = best_theta[5]
+                        best_fit_points[13] = best_theta[6]
+                    elif run_type == '1pa_vs_2pa':
+                        best_fit_points[0:5] = best_theta[0:5]
+                        best_fit_points[11] = best_theta[5]
+                        best_fit_points[13] = best_theta[6]
+                        best_fit_points[-1] = best_theta[7]
+                    else:
+                        print("Unsupported Type")
 
+                ndim_local = len(best_theta)
 
-            ndim_local = len(best_theta)
+                Qp, bp, _ = compute_fisher_parallelotope(
+                           ctx=ctx,
+                        params_to_infer= param_names_to_infer,
+                        fisher_params=best_fit_points,
+                        use_gpu=USE_GPU,
+                        prior_sigma_range=float(prior_sigma_range),
+                        using_evec=using_evec,
+                        additional_kwargs=fisher_add_kwargs,
+                            _TARGET_SNR= _TARGET_SNR,
+                        build_waveform_response= build_waveform_response
+                    )
 
-            Qp, bp, _ = compute_fisher_parallelotope(
-                       ctx=ctx,
-                    params_to_infer= param_names_to_infer,
-                    fisher_params=best_fit_points,
-                    use_gpu=USE_GPU,
-                    prior_sigma_range=float(prior_sigma_range),
-                    using_evec=using_evec,
-                    additional_kwargs=fisher_add_kwargs,
-                        _TARGET_SNR= _TARGET_SNR,
-                    build_waveform_response= build_waveform_response
+                cov = covariance_from_fisher_parallelotope(
+                    Qp, bp, prior_sigma_range=float(prior_sigma_range)
                 )
 
-            cov = covariance_from_fisher_parallelotope(
-                Qp, bp, prior_sigma_range=float(prior_sigma_range)
-            )
+                rng = np.random.default_rng()
 
-            rng = np.random.default_rng()
+                for _ in range(500):
+                    step = rng.multivariate_normal(
+                        mean=np.zeros(ndim_local),
+                        cov=1e-5 * cov,
+                    )
 
-            for _ in range(500):
-                step = rng.multivariate_normal(
-                    mean=np.zeros(ndim_local),
-                    cov=1e-5 * cov,
-                )
+                    cand = _clip_physical_params_intrinsic(best_theta + step)
+                    val = float(objective(cand))
 
-                cand = _clip_physical_params_intrinsic(best_theta + step)
-                val = float(objective(cand))
+                    if val > best_val:
+                        best_theta, best_val = cand, val
 
-                if val > best_val:
-                    best_theta, best_val = cand, val
+                tracker.update(best_theta, best_val)
 
-            tracker.update(best_theta, best_val)
-
-            print(f"[POLISH] Final best score: {best_val:.6e}")
-            print(f"[POLISH] Final best point: {best_theta.tolist()}")
+                print(f"[POLISH] Final best score: {best_val:.6e}")
+                print(f"[POLISH] Final best point: {best_theta.tolist()}")
+            except Exception as exc_polish:
+                if refine_only:
+                    print("[REFINE-ONLY] Skipping Gaussian polish")
+                else:
+                    import traceback
+                    print(f"[WARN] Gaussian polish skipped: {exc_polish}\n{traceback.format_exc()}")
 
             # ---------------------------
             # Rename directory based on result
@@ -1439,13 +1460,17 @@ def main(signal_param_array,
 
             add_kwargs['chi2']=result_array['chi2']
 
+            try:
+                final_overlap = calculate_detection_overlap(
+                        result_array['m1'], result_array['m2'], result_array['a'], result_array['p0'], result_array['e0'], ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'],
+                        result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],add_kwargs,
+                        maximize_phase=False,
+                        **temp_dict)
+                print("Overlap of the best point:", final_overlap)
+            except Exception as exc_ov:
+                print(f"[WARN] PARIS overlap calculation failed: {exc_ov}")
+                final_overlap = float('nan')
 
-            final_overlap = calculate_detection_overlap(
-                    result_array['m1'], result_array['m2'], result_array['a'], result_array['p0'], result_array['e0'], ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
-                    result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],add_kwargs,
-                    maximize_phase=False,
-                    **temp_dict)
-            print("Overlap of the best point:", final_overlap)
             out = {
                 "optimizer": "PARIS",
                 "target_func": target_func,
@@ -1478,42 +1503,103 @@ def main(signal_param_array,
 
             # ---------------------------
             # Post-PARIS refinement: DE then Nelder-Mead
+            # Phases (Phi_phi0, Phi_r0) are added to the search space here
+            # even when PARIS ran over intrinsic params only.
             # ---------------------------
             if cfg.refine_after_paris:
+                # Expand search to include phases if PARIS used intrinsic-only space
+                _n_intr = 5  # m1, m2, a, p0, e0
+                if parameter_selected == 'intrinsic':
+                    _phases0 = np.array([ctx['Phi_phi0'], ctx['Phi_r0']], dtype=float)
+                    if run_type == '1pa_vs_2pa':
+                        best_theta_r = np.concatenate([best_theta[:_n_intr], _phases0, best_theta[5:6]])
+                        _refine_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'chi2']
+                    else:
+                        best_theta_r = np.concatenate([best_theta[:_n_intr], _phases0])
+                        _refine_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0']
+                    _refine_raw_obj = objective_factory(
+                        target_func=target_func,
+                        ctx=ctx,
+                        phase_max=phase_max_flag,
+                        use_1PA=(run_type == '1pa_vs_2pa'),
+                        with_phase=True,
+                        add_kwargs=add_kwargs,
+                    )
+                else:
+                    best_theta_r = best_theta
+                    _refine_raw_obj = objective
+                    _refine_keys = starting_point_keys
+
+                ndim_r = len(best_theta_r)
+
+                # Warm-start: resume from the previous run's best refined point
+                # rather than the true injected params, so a re-run doesn't
+                # re-walk the same flat region the DE+NM already crossed
+                # (saves ~4h/point of redundant search).
+                if refine_only:
+                    import glob as _glob
+                    _prev_matches = _glob.glob(os.path.join(
+                        base_dir, f"paris_{target_func}_id_*", "results_refined_*.npy"))
+                    if _prev_matches:
+                        _prev_refined = max(_prev_matches, key=os.path.getmtime)
+                        _prev_best = np.load(_prev_refined, allow_pickle=True).item()
+                        best_theta_r = np.array([_prev_best[k] for k in _refine_keys], dtype=float)
+                        print(f"{_ts()} [REFINE] Warm-starting from previous best point: "
+                              f"{_prev_refined}")
+
+                best_val_r = float(_refine_raw_obj(best_theta_r))
+                print(f"[REFINE] Starting {ndim_r}D refinement (PARIS best + phases): "
+                      f"score={best_val_r:.6e}")
+
+                def neg_obj_r(theta):
+                    try:
+                        return -float(_refine_raw_obj(theta))
+                    except Exception:
+                        return np.inf
+
                 print(f"\n{_ts()} {'='*55}")
                 print(f"{_ts()} STAGE 2 (REFINE): Differential Evolution "
                       f"({cfg.de_refine_maxiter} gen, popsize={cfg.de_refine_popsize})")
                 print(f"{_ts()} {'='*55}")
                 _t_de_start = time.time()
                 try:
-                    # Build Fisher bounds around PARIS best point
+                    # Build Fisher bounds: intrinsic dims from Fisher, phase dims ±1 rad
                     diag_sigma_r = np.asarray(fisher_meta['diag_sigma'])
-                    if len(diag_sigma_r) < ndim:
-                        diag_sigma_full_r = np.full(ndim, np.pi / float(prior_sigma_range))
-                        diag_sigma_full_r[:len(diag_sigma_r)] = diag_sigma_r
-                    else:
-                        diag_sigma_full_r = diag_sigma_r[:ndim]
+                    # Fisher cache is at snr_model (≈20); scale sigma to _TARGET_SNR (≈20,000)
+                    _snr_scale_r = np.sqrt(float(fisher_meta.get('scale_applied', 1.0)))
+                    if _snr_scale_r > 1.0:
+                        diag_sigma_r = diag_sigma_r / _snr_scale_r
+                        print(f"[REFINE] diag_sigma SNR-scaled by 1/{_snr_scale_r:.1f} "
+                              f"(snr_model → _TARGET_SNR)")
                     _rpr = cfg.refine_prior_sigma_range
-                    refine_bounds = [(best_theta[i] - diag_sigma_full_r[i]*_rpr,
-                                      best_theta[i] + diag_sigma_full_r[i]*_rpr)
-                                     for i in range(ndim)]
+                    if parameter_selected == 'intrinsic':
+                        refine_bounds = [(best_theta_r[i] - diag_sigma_r[i]*_rpr,
+                                          best_theta_r[i] + diag_sigma_r[i]*_rpr)
+                                         for i in range(_n_intr)]
+                        refine_bounds += [(best_theta_r[5] - 1.0, best_theta_r[5] + 1.0),
+                                          (best_theta_r[6] - 1.0, best_theta_r[6] + 1.0)]
+                        if run_type == '1pa_vs_2pa':
+                            refine_bounds.append((best_theta_r[7] - diag_sigma_r[5]*_rpr,
+                                                   best_theta_r[7] + diag_sigma_r[5]*_rpr))
+                    else:
+                        if len(diag_sigma_r) < ndim_r:
+                            diag_sigma_full_r = np.full(ndim_r, np.pi / float(prior_sigma_range))
+                            diag_sigma_full_r[:len(diag_sigma_r)] = diag_sigma_r
+                        else:
+                            diag_sigma_full_r = diag_sigma_r[:ndim_r]
+                        refine_bounds = [(best_theta_r[i] - diag_sigma_full_r[i]*_rpr,
+                                          best_theta_r[i] + diag_sigma_full_r[i]*_rpr)
+                                         for i in range(ndim_r)]
                     _de_gen = [0]
-                    def neg_obj(theta):
-                        try:
-                            return -float(objective(theta))
-                        except Exception:
-                            # Waveform too short (plunging orbit) or other
-                            # generation failure — treat as infeasible point.
-                            return np.inf
                     def _de_callback(xk, convergence):
                         _de_gen[0] += 1
                         if _de_gen[0] % 10 == 0:
                             print(f"{_ts()} [DE] gen={_de_gen[0]:3d}  "
-                                  f"score={-neg_obj(xk):.6e}  convergence={convergence:.4f}")
+                                  f"score={-neg_obj_r(xk):.6e}  convergence={convergence:.4f}")
                         return False
                     de_result = differential_evolution_optimize(
-                        theta0=best_theta,
-                        objective=neg_obj,
+                        theta0=best_theta_r,
+                        objective=neg_obj_r,
                         fisher_bounds=refine_bounds,
                         maxiter=cfg.de_refine_maxiter,
                         seed=seed,
@@ -1521,14 +1607,14 @@ def main(signal_param_array,
                         popsize=cfg.de_refine_popsize,
                     )
                     _de_elapsed = (time.time() - _t_de_start) / 60
-                    if -de_result.fun > best_val:
-                        best_theta = np.asarray(de_result.x, dtype=float)
-                        best_val = -de_result.fun
-                        print(f"{_ts()} [REFINE] DE improved score to {best_val:.6e}  "
+                    if -de_result.fun > best_val_r:
+                        best_theta_r = np.asarray(de_result.x, dtype=float)
+                        best_val_r = -de_result.fun
+                        print(f"{_ts()} [REFINE] DE improved score to {best_val_r:.6e}  "
                               f"({_de_elapsed:.1f} min, {de_result.nfev} evals)")
                     else:
                         print(f"{_ts()} [REFINE] DE did not improve "
-                              f"({-de_result.fun:.6e} vs {best_val:.6e}, "
+                              f"({-de_result.fun:.6e} vs {best_val_r:.6e}, "
                               f"{_de_elapsed:.1f} min, {de_result.nfev} evals)")
                 except Exception as exc:
                     import traceback
@@ -1541,27 +1627,28 @@ def main(signal_param_array,
                 _t_nm_start = time.time()
                 try:
                     nm_result = nelder_mead_optimize(
-                        best_theta,
-                        neg_obj,
+                        best_theta_r,
+                        neg_obj_r,
                         maxiter=cfg.nm_refine_maxiter,
+                        maxfev=cfg.nm_refine_maxfev,
                         xatol=cfg.nm_xatol,
-                        fatol=cfg.nm_fatol,
+                        fatol=cfg.nm_refine_fatol,
                     )
                     _nm_elapsed = (time.time() - _t_nm_start) / 60
-                    if -nm_result.fun > best_val:
-                        best_theta = np.asarray(nm_result.x, dtype=float)
-                        best_val = -nm_result.fun
-                        print(f"{_ts()} [REFINE] NM improved score to {best_val:.6e}  "
+                    if -nm_result.fun > best_val_r:
+                        best_theta_r = np.asarray(nm_result.x, dtype=float)
+                        best_val_r = -nm_result.fun
+                        print(f"{_ts()} [REFINE] NM improved score to {best_val_r:.6e}  "
                               f"({_nm_elapsed:.1f} min, {nm_result.nfev} evals, "
                               f"converged={nm_result.success})")
                     else:
                         print(f"{_ts()} [REFINE] NM did not improve "
-                              f"({-nm_result.fun:.6e} vs {best_val:.6e}, "
+                              f"({-nm_result.fun:.6e} vs {best_val_r:.6e}, "
                               f"{_nm_elapsed:.1f} min, converged={nm_result.success})")
 
-                    # Update result_array with refined point
-                    for i, key in enumerate(starting_point_keys):
-                        result_array[key] = best_theta[i]
+                    # Update result_array with refined point (now includes phases)
+                    for i, key in enumerate(_refine_keys):
+                        result_array[key] = best_theta_r[i]
                     add_kwargs['chi2'] = result_array['chi2']
                     final_overlap_refined = calculate_detection_overlap(
                         result_array['m1'], result_array['m2'], result_array['a'],
@@ -1573,8 +1660,8 @@ def main(signal_param_array,
 
                     refine_out = {
                         'optimizer': 'paris+de+nm',
-                        'best_point': best_theta.tolist(),
-                        'best_score': best_val,
+                        'best_point': best_theta_r.tolist(),
+                        'best_score': best_val_r,
                         'final_overlap': float(final_overlap_refined),
                     }
                     Config.save_results_with_config(
@@ -1668,11 +1755,37 @@ if __name__ == "__main__":
             return int(m.group(1)) if m else -1
         return max(matches, key=_sp_num)
 
+    # -------------------------------------------------------------------------
+    # SNR inflation for 1PA-bias detectability.
+    #
+    # The 1PA vs 2PA waveform mismatch for EMRIs (m1=1e6, m2=10 Msun) is
+    # ~3e-9 to 3e-7 across the grid — far too small to produce a detectable
+    # parameter bias at the astrophysical SNR=20.  The bias in absolute
+    # parameter units is SNR-independent (Cutler-Vallisneri), but bias/sigma
+    # grows as SNR * sqrt(mismatch).  By inflating the SNR we shrink the
+    # Fisher uncertainty sigma while keeping the physical bias fixed, so
+    # bias/sigma reaches O(1) and the optimizer can resolve it.
+    #
+    # We achieve the inflation by reducing the source distance: SNR ~ 1/dist,
+    # so dist -> dist / SNR_INFLATION raises SNR by SNR_INFLATION.
+    # Choose SNR_INFLATION = 1000 to reach effective SNR ~ 20,000, giving
+    # bias/sigma >= 1 for all 25 grid points (including the weakest,
+    # mismatch~3e-9).  The Fisher prior automatically tightens to match.
+    #
+    # To recover the physical bias from these results, note that the reported
+    # Delta_theta is already in physical units (SNR-independent), so it can
+    # be compared directly against sigma_Fisher(SNR=20).
+    # -------------------------------------------------------------------------
+    SNR_INFLATION = 1000  # effective SNR = 20 * 1000 = 20,000
+
     startindex = _cli.start if _cli.start is not None else cfg.start_index
     endindex   = _cli.end   if _cli.end   is not None else cfg.end_index
     print(f"[INFO] Grid range: [{startindex}, {endindex})  TYPE={TYPE}  run_type={run_type}")
+    print(f"[INFO] SNR inflation factor: {SNR_INFLATION}  (effective SNR ~ {20 * SNR_INFLATION})")
     for i in range(startindex,endindex):
-        paramter_selected = parameter_array[i]
+        paramter_selected = parameter_array[i].copy()
+        # Scale distance down to inflate SNR; index 6 is 'dist' in the param row.
+        paramter_selected[6] = paramter_selected[6] / SNR_INFLATION
         params = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
                          "Phi_phi0","Phi_theta0","Phi_r0","dt","T","chi2"]
         param_dict = dict(zip(params, paramter_selected))
@@ -1685,7 +1798,7 @@ if __name__ == "__main__":
         else:
             starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
             np.save(starting_point_file, param_dict)
-    
+
         # target_func, optimizer,
         # n_channels, startingpoints_file)
         result_dict = main(signal_param_array=paramter_selected[0:14],
