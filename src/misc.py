@@ -393,8 +393,18 @@ def calculate_detection_overlap(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA']}
     
     nchannels = signal.shape[0]
-    
-    h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
+
+    try:
+        h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
+    except Exception as exc:
+        # Near-merger waveforms (e.g. IMRI_TAIL) can plunge before reaching the
+        # requested Tobs for some sampled parameters, producing a trajectory
+        # shorter than the LISA response model expects
+        # (fastlisaresponse raises AssertionError: len(input_in) >= self.num_pts).
+        # Treat such points as having zero overlap rather than crashing the caller.
+        print(f"[WARN] waveform_response failed ({exc!r}); treating point as zero overlap")
+        return -np.inf
+
     PSD = fixed['PSD']
 
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=nchannels)
