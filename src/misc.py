@@ -124,7 +124,7 @@ def compute_fisher_parallelotope(ctx: dict,
         exit(1)
        # waveform_response = build_waveform_response(T=ctx['T'], dt=ctx['dt'], use_gpu=use_gpu)
 
-    
+    print("Computing Fisher matrix for parameters: ", params_to_infer)
     param_names = params_to_infer
     nchannels = ctx["waveform_true_fft"].shape[0]
     if nchannels == 3:
@@ -142,7 +142,7 @@ def compute_fisher_parallelotope(ctx: dict,
 
 
     sef = StableEMRIFisher(waveform_class=SuperKludgeWaveform,
-                       waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=False, odd_len=True)),
+                       waveform_class_kwargs = dict(sum_kwargs=dict(pad_output=True, odd_len=True)),
                        waveform_generator = GenerateEMRIWaveform,
                        waveform_generator_kwargs= dict(return_list=False),
                        ResponseWrapper=ResponseWrapper,
@@ -404,12 +404,14 @@ def calculate_detection_snr(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     emri_kwargs =  {"T": fixed['T'], "dt": fixed['dt'],'chi2': add_kwargs['chi2'],'evolve_1PA': add_kwargs['evolve_1PA'],
                     'evolve_primary': add_kwargs['evolve_primary'],'evolve_2PA': add_kwargs['evolve_2PA']}
     nchannels = signal.shape[0]
+    # try:
     h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels,:]  # Shape (3, N) for A, E, T channels
     PSD = fixed['PSD']
     h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'], use_gpu=fixed['use_gpu'], n_channels=nchannels)
     optimal_snr = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=cp)
     denom = xp.sqrt(optimal_snr)
-
+    # except:
+    #     return -np.inf
 
     if (maximize_phase):
         num = inner_prod_without_phase(signal, h_f, PSD, fixed['delta_f'], xp=cp)
@@ -421,7 +423,7 @@ def calculate_detection_snr(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
     if(xp.isnan(snr) or xp.isinf(snr)):
         print(f"[WARN] SNR computation returned {snr}; setting to 0")
         return -np.inf
-    return float(snr)
+    return float(snr) * 50
 
 def timemax_correlation(h1, h2,dt, PSD, xp=np):
 

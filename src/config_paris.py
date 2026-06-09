@@ -6,20 +6,22 @@ import traceback
 import json
 import time
 
-
+#run all imri phase with nealder-mead
 class Config:
 
     def __init__(self, **kwargs):
     
         # Target SNR for Fisher scaling
-        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0']  #Default parameters to infer; can be overridden by --params CLI arg
+        self.param_names_to_infer = ['m1', 'm2', 'a', 'p0', 'e0',"Phi_phi0","Phi_r0",'chi2'] 
         self.params_name = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
                          "Phi_phi0","Phi_theta0","Phi_r0"]
         self.param_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/signal_parameter_array_IMRI.npy"
-        self.result_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/result_parameter_array_IMRI.npy"
-        self.TYPE = "IMRI"   #IMRI or IMRI_phase
-        self.start_index = 1
-        self.end_index =  15
+        self.result_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/result_parameter_array_IMRI_with_phase_1PA.npy"
+        # self.param_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/signal_parameter_array_IMRI_TAIL.npy"
+        # self.result_file = "/scratch/e1583490/SuperKludege_Optimizations/opt_grid/result_parameter_array_IMRI_TAIL_with_phase_1PA.npy"
+        self.TYPE = "IMRI_phase"   #IMRI or IMRI_phase
+        self.start_index = 0 # have to redo 1 afterwards for IMRI case, but can do 2-25 first; set to 0 to run all
+        self.end_index =  25
 
 
         self.nchannels = 2  #Number of TDI channels to use (default 3 for A, E, T)
@@ -29,23 +31,24 @@ class Config:
         self.nm_xatol = 1e-6  #tol for Nelder-Mead; set high to disable
         self.using_evec = False  #Use Fisher eigenvectors to define ellipse prior; default builds diagonal box
         self.seed_cloud = 200  #Number of initial unit-cube seeds for PARIS around center
-        self.paris_seed_n = 100
+        self.paris_seed_n = 15
         # self.paris_seed_n = 10
         self.paris_niterations = 2000  #Number of PARIS iterations; default 1000
 
         self.nm_fatol = 1e-6  #Absolute function tolerance for Nelder-Mead; default 0.01
-        self.de_maxiter = 1000  #Max iterations for differential evolution; default 1000
+        self.de_maxiter = 250  #Max iterations for differential evolution; default 1000
         self.nm_maxiter = 10000  #Max iterations for differential evolution; default 1000
         self.target_func = 'optimal_snr'  #'optimal_snr', 'optimal_snr_phase_max', 'time_max', 'phase_match','chi2_match'
-        self.optimizer = 'paris'  # nelder-mead or paris or differential_evolution
+        self.optimizer = 'nelder-mead'  # nelder-mead or paris or differential_evolution
 
-        self.parameter_selected = "intrinsic" #or "intrinsic_phase","intrinsic"
-        self.run_type = "0pa_vs_2pa" # "0pa_vs_2pa", "1pa_vs_2pa"
+        self.parameter_selected = "intrinsic_phase" #or "intrinsic_phase","intrinsic"
+        self.run_type = "1pa_vs_2pa" # "0pa_vs_2pa", "1pa_vs_2pa"
         self.include_noise = False # Whether to include noise in the likelihood evaluations (default False for testing)
 
-        self.prior_sigma_range = 28.0  #Default range for uniform prior in PARIS (±20% of center)
+        self.prior_sigma_range = 75.0  #Default range for uniform prior in PARIS (±20% of center)
 
-        self.basedir = "/scratch/e1583490/SuperKludege_Optimizations/IMRI/"
+        # self.basedir = "/scratch/e1583490/SuperKludege_Optimizations/IMRI_TAIL_1PA_with_Phase_2/"
+        self.basedir = "/scratch/e1583490/SuperKludege_Optimizations/IMRI_with_phase_1PA/"
 
         self.output_text_file = "paris_optimization_results.txt"  #File to save optimization results in text format
         self.seed= 42   

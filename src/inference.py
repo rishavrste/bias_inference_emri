@@ -149,7 +149,7 @@ def paris_log_density(params):
 def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> ResponseWrapper:
     """Create a LISA ResponseWrapper consistent with existing modules."""
 
-    sum_kwargs = dict(pad_output=False, odd_len=True)
+    sum_kwargs = dict(pad_output=True, odd_len=True)
     
     waveform_model = GenerateEMRIWaveform(SuperKludgeWaveform, sum_kwargs=sum_kwargs, return_list=False,use_gpu=use_gpu)
 
@@ -763,6 +763,7 @@ def main(signal_param_array,
 
     
     elif run_type == '1pa_vs_2pa' and parameter_selected == "intrinsic_phase":
+        print("Selected run_type: 1pa_vs_2pa with parameter_selected: intrinsic_phase")
         add_kwargs['evolve_1PA'] = True
         add_kwargs['evolve_2PA'] = False
         if starting_point is not None:
@@ -813,7 +814,7 @@ def main(signal_param_array,
     objective = tracked_objective
     result = None
     if optimizer == 'nelder-mead':
-            try:
+       #     try:
                 # Constrain search to remain within relative deviation of original (ctx-based) parameters
                 tol = 1e-6 #1e-8 1pa emri #1e-6
                 theta_ref = theta0.copy()
@@ -934,10 +935,10 @@ def main(signal_param_array,
                                         filename_prefix=f"opt_nelder_mead_{target_func}_id_{id}"
                                     )
     
-            except Exception as exc:
-                print(f"[ERROR] Nelder-Mead optimization failed: {exc}")
+            # except Exception as exc:
+            #     print(f"[ERROR] Nelder-Mead optimization failed: {exc}")
 
-            return result_array
+                return result_array
 
     
     elif optimizer == 'differential_evolution':
@@ -1109,8 +1110,8 @@ def main(signal_param_array,
     elif optimizer == 'paris':
         # --- PARIS Optimization Block ---
 
-        try:
-        # if True:
+        # try:
+        if True:
             # ---------------------------
             # Fisher prior computation
             # ---------------------------
@@ -1120,7 +1121,8 @@ def main(signal_param_array,
             except ImportError:
                 USE_GPU = False
 
-            try:
+            # try:
+            if True:
 
                 Q, b, fisher_meta = compute_fisher_parallelotope(
                     ctx=ctx,
@@ -1137,8 +1139,8 @@ def main(signal_param_array,
                 print("Fisher parallelotope computed successfully.")
                 fisher_ok = True
 
-            except Exception as e:
-                raise RuntimeError(f"[FATAL] Fisher prior failed: {e}") from e
+            # except Exception as e:
+            #     raise RuntimeError(f"[FATAL] Fisher prior failed: {e}") from e
 
             # ---------------------------
             # Directory setup
@@ -1153,6 +1155,7 @@ def main(signal_param_array,
             # ---------------------------
             # Run PARIS optimizer
             # ---------------------------
+            
             sampler, prior_transform, ext_points = run_paris(
                 ndim=ndim,
                 prior_center=theta0,
@@ -1381,8 +1384,8 @@ def main(signal_param_array,
         # ---------------------------
         # Global failure handler
         # ---------------------------
-        except Exception as exc:
-            print(f"[WARN] PARIS optimization failed: {exc}")
+        # except Exception as exc:
+        #     print(f"[WARN] PARIS optimization failed: {exc}")
         
         return result_array
             
@@ -1425,11 +1428,16 @@ if __name__ == "__main__":
         paramter_selected = parameter_array[i]
         params = ["m1","m2","a","p0","e0","xI0","dist","qS","phiS","qK","phiK",
                          "Phi_phi0","Phi_theta0","Phi_r0","dt","T","chi2"]
+        # result_i  = result_array[i]
         param_dict = dict(zip(params, paramter_selected))
         base_dir_i = os.path.join(base_dir, f"{TYPE}_{i}")
-        starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
+        base_j = os.path.join("/scratch/e1583490/SuperKludege_Optimizations/IMRI",f"IMRI_1PA_{i}")
+        base_dir_i_j=os.path.join(base_j,"nelder_mead_optimal_snr_run_id_1")
+        # starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
+        starting_point_file = os.path.join(base_dir_i_j, "starting_point_2.npy")
+        print("Starting point file:", starting_point_file)
         os.makedirs(base_dir_i, exist_ok=True)
-        np.save(starting_point_file,param_dict)
+        # np.save(starting_point_file,param_dict)
     
         # target_func, optimizer,
         # n_channels, startingpoints_file)
@@ -1448,6 +1456,7 @@ if __name__ == "__main__":
                            paris_conf=paris_conf,seed=seed,
                            cfg = cfg)
         result = list(result_dict.values())
+        print(result)
         result_array[i] = result
         np.save(result_folder,result_array)
 
