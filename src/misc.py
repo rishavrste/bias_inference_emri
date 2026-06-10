@@ -108,7 +108,8 @@ def compute_fisher_parallelotope(ctx: dict,
                                  prior_sigma_range: float = 20,
                                  using_evec: bool = False,
                                  cache_dir: Optional[str] = None,
-                                 cache_index: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, dict]:
+                                 cache_index: Optional[int] = None,
+                                 min_prior_widths: Optional[dict] = None) -> Tuple[np.ndarray, np.ndarray, dict]:
     """Build Fisher-based local prior around ``theta0``.
 
     When ``using_evec`` is True we recover the original Fisher ellipsoid (axes
@@ -256,6 +257,14 @@ def compute_fisher_parallelotope(ctx: dict,
     if not using_evec:
         sigma_diag = F_std
         print(f"[DIAG_STD] {repr(sigma_diag)}")
+        if min_prior_widths is not None:
+            floors = np.array([
+                max(min_prior_widths.get(p, 0.0) / prior_sigma_range,
+                    0.1 * abs(ctx.get(p, 0.0)) / prior_sigma_range)
+                for p in params_to_infer
+            ])
+            sigma_diag = np.maximum(sigma_diag, floors)
+            print(f"[DIAG_STD_FLOORED] {repr(sigma_diag)}")
         eigvals = sigma_diag ** 2
         print(f"[DIAG_EIGVALS] {repr(eigvals)}")
         b = prior_sigma_range * sigma_diag

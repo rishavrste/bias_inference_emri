@@ -75,7 +75,15 @@ class Config:
         self.target_func = 'optimal_snr_phase_max'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
         self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
         self.include_noise = False
-        self.prior_sigma_range = 30.0
+        self.prior_sigma_range = 50.0
+        self.min_prior_widths = {
+            'm1':  50000.0,   # 5% of typical m1=1e6
+            'm2':   1000.0,   # 10% of typical m2=1e4
+            'a':       0.05,  # floor for near-zero spin; max(0.1*|a|, 0.05) applied in code
+            'p0':      1.0,   # ~3% of typical p0~30
+            'e0':      0.05,  # critical: fixes Fisher over-tightness at high eccentricity
+            'chi2':    0.1,
+        }
 
         # --- Post-DE refinement ---
         # Narrow DE then Nelder-Mead with phases from best DE point.
@@ -87,7 +95,7 @@ class Config:
         self.nm_refine_maxiter = 3000
         self.nm_refine_maxfev  = 5000
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
-        self.refine_prior_sigma_range = 15.0  # tighter bounds for DE/NM (vs prior_sigma_range for PARIS)
+        self.refine_prior_sigma_range = 30.0  # tighter bounds for DE/NM (vs prior_sigma_range for PARIS)
 
         # --- Misc ---
         self.output_text_file = "paris_optimization_results.txt"

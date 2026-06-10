@@ -1022,6 +1022,7 @@ def main(signal_param_array,
                     build_waveform_response= build_waveform_response,
                     cache_dir=cache_dir,
                     cache_index=grid_index,
+                    min_prior_widths=cfg.min_prior_widths,
                 )
                 diag_sigma_fisher = np.asarray(fisher_meta['diag_sigma'])
                 # Pad phase dimensions with uniform ±pi if intrinsic_phase
@@ -1344,6 +1345,7 @@ def main(signal_param_array,
                     build_waveform_response= build_waveform_response,
                     cache_dir=cache_dir,
                     cache_index=grid_index,
+                    min_prior_widths=cfg.min_prior_widths,
                 )
                 print(f"{_ts()} Fisher parallelotope computed successfully.")
                 fisher_ok = True
@@ -1506,7 +1508,8 @@ def main(signal_param_array,
                     using_evec=using_evec,
                     additional_kwargs=fisher_add_kwargs,
                         _TARGET_SNR= _TARGET_SNR,
-                    build_waveform_response= build_waveform_response
+                    build_waveform_response= build_waveform_response,
+                    min_prior_widths=cfg.min_prior_widths,
                 )
 
             cov = covariance_from_fisher_parallelotope(
