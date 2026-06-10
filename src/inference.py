@@ -1195,8 +1195,8 @@ def main(signal_param_array,
                     for j in range(ndim)
                 ]
                 if _refine_with_phase:
-                    _phi0_init = float(result_array['Phi_phi0'])
-                    _phir0_init = float(result_array['Phi_r0'])
+                    _phi0_init = float(result_array['Phi_phi0']) % (2 * np.pi)
+                    _phir0_init = float(result_array['Phi_r0']) % (2 * np.pi)
                     _de_best_r = np.append(_de_best, [_phi0_init, _phir0_init])
                     _refine_bounds_r = _refine_bounds + [(0.0, 2*np.pi), (0.0, 2*np.pi)]
                     def _neg_obj_r(theta):
@@ -1683,8 +1683,8 @@ def main(signal_param_array,
                     # Phi_phi0 and Phi_r0 jointly with the intrinsic params.
                     _refine_with_phase = (parameter_selected == 'intrinsic')
                     if _refine_with_phase:
-                        _phi0_init = float(result_array['Phi_phi0'])
-                        _phir0_init = float(result_array['Phi_r0'])
+                        _phi0_init = float(result_array['Phi_phi0']) % (2 * np.pi)
+                        _phir0_init = float(result_array['Phi_r0']) % (2 * np.pi)
                         best_theta_r = np.append(best_theta, [_phi0_init, _phir0_init])
                         refine_bounds_r = refine_bounds + [(0.0, 2*np.pi), (0.0, 2*np.pi)]
                         def neg_obj(theta):

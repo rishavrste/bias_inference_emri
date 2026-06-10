@@ -75,7 +75,7 @@ class Config:
         self.target_func = 'optimal_snr_phase_max'  # 'optimal_snr' | 'optimal_snr_phase_max' | 'time_max' | 'chi2_match'
         self.optimizer = 'paris'  # 'nelder-mead' | 'paris' | 'differential_evolution'
         self.include_noise = False
-        self.prior_sigma_range = 50.0
+        self.prior_sigma_range = 30.0
         self.min_prior_widths = {
             'm1':  50000.0,   # 5% of typical m1=1e6
             'm2':   1000.0,   # 10% of typical m2=1e4
