@@ -11,7 +11,7 @@ set -euo pipefail   # Keep safety flags, but drop set -x
 
 # ONE timestamp used everywhere
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-LOG_DIR=/scratch/e1583490/SuperKludege_Optimizations/IMRI_with_phase_1PA/logs_$(date +%Y%m%d_%H%M%S)
+LOG_DIR=/scratch/e1583490/SuperKludege_Optimizations/IMRI_TAIL_1PA_with_Phase_3/logs_$(date +%Y%m%d_%H%M%S)
 mkdir -p "$LOG_DIR"
 
 # Redirect everything ONCE, early, before any real work

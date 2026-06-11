@@ -61,11 +61,13 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
 
     Indices: 0:m1, 1:m2, 2:a, 3:p0, 4:e0, [5:Phi_phi0, 6:Phi_r0], [5 or 7:chi2]
 
-    - m1, m2  > 0
-    - a       in [-0.9999,  0.9999]
-    - e0      in [1e-8,     1-1e-8]
-    - chi2    in [-1.0,     1.0]    (index 5 when ndim==6, index 7 when ndim==8)
+    - m1, m2       > 0
+    - a            in [-0.998,   0.998]   (FEW grid hard limit is 0.999; stay safely below)
+    - e0           in [1e-8,     1-1e-8]
+    - Phi_phi0/r0  in [-2pi,     2pi]    (indices 5,6 when ndim==7 or 8)
+    - chi2         in [-1.0,     1.0]    (index 5 when ndim==6, index 7 when ndim==8)
     """
+    _2pi = 2.0 * np.pi
     x = np.asarray(theta, dtype=float).copy()
 
     if x.ndim == 1:
@@ -74,11 +76,16 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         if x.shape[0] >= 2:
             x[1] = max(x[1], 1e-30)           # m2 > 0
         if x.shape[0] >= 3:
-            x[2] = np.clip(x[2], -0.9999, 0.9999)   # a (spin)
+            x[2] = np.clip(x[2], -0.998, 0.998)   # a (spin)
+        if x.shape[0] >= 4:
+            x[3] = max(x[3], 6.5)             # p0 > 0 (prevents FEW interpolation crash)
         if x.shape[0] >= 5:
             x[4] = np.clip(x[4], 1e-8, 1 - 1e-8)   # e0 (eccentricity)
         if x.shape[0] == 6:
             x[5] = np.clip(x[5], -1.0, 1.0)         # chi2 (intrinsic, no phase)
+        if x.shape[0] in (7, 8):
+            x[5] = np.clip(x[5], -_2pi, _2pi)       # Phi_phi0
+            x[6] = np.clip(x[6], -_2pi, _2pi)       # Phi_r0
         if x.shape[0] == 8:
             x[7] = np.clip(x[7], -1.0, 1.0)         # chi2 (intrinsic + phase)
         return x
@@ -87,11 +94,16 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         x[:, 0] = np.maximum(x[:, 0], 1e-30)        # m1 > 0
         x[:, 1] = np.maximum(x[:, 1], 1e-30)        # m2 > 0
         if x.shape[1] >= 3:
-            x[:, 2] = np.clip(x[:, 2], -0.9999, 0.9999)  # a (spin)
+            x[:, 2] = np.clip(x[:, 2], -0.998, 0.998)  # a (spin)
+        if x.shape[1] >= 4:
+            x[:, 3] = np.maximum(x[:, 3], 6.5)      # p0 > 0 (prevents FEW interpolation crash)
         if x.shape[1] >= 5:
             x[:, 4] = np.clip(x[:, 4], 1e-8, 1 - 1e-8)  # e0 (eccentricity)
         if x.shape[1] == 6:
             x[:, 5] = np.clip(x[:, 5], -1.0, 1.0)        # chi2 (intrinsic, no phase)
+        if x.shape[1] in (7, 8):
+            x[:, 5] = np.clip(x[:, 5], -_2pi, _2pi)      # Phi_phi0
+            x[:, 6] = np.clip(x[:, 6], -_2pi, _2pi)      # Phi_r0
         if x.shape[1] == 8:
             x[:, 7] = np.clip(x[:, 7], -1.0, 1.0)        # chi2 (intrinsic + phase)
         return x
