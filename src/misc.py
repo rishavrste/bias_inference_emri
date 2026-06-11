@@ -259,8 +259,7 @@ def compute_fisher_parallelotope(ctx: dict,
         print(f"[DIAG_STD] {repr(sigma_diag)}")
         if min_prior_widths is not None:
             floors = np.array([
-                max(min_prior_widths.get(p, 0.0) / prior_sigma_range,
-                    0.1 * abs(ctx.get(p, 0.0)) / prior_sigma_range)
+                min_prior_widths.get(p, 0.0) / prior_sigma_range
                 for p in params_to_infer
             ])
             sigma_diag = np.maximum(sigma_diag, floors)

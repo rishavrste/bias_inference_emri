@@ -1882,20 +1882,35 @@ if __name__ == "__main__":
     paris_conf['paris_seed_n'] = cfg.paris_seed_n
     paris_conf['paris_temperature'] = cfg.paris_temperature
 
-    def _find_latest_starting_point(base_dir_i, target_func):
-        """Return the highest-numbered starting_point_N.npy from any previous
-        PARIS run, or None if no previous run exists.  This lets a re-run warm-
-        start PARIS around the previous best rather than the raw signal params."""
-        import glob
-        pattern = os.path.join(base_dir_i, f"paris_{target_func}_id_*",
-                               "starting_point_*.npy")
-        matches = glob.glob(pattern)
-        if not matches:
-            return None
-        def _sp_num(p):
-            m = re.search(r'starting_point_(\d+)\.npy$', p)
-            return int(m.group(1)) if m else -1
-        return max(matches, key=_sp_num)
+    def _find_best_starting_point(base_dir_i, target_func):
+        """Return the starting_point_N.npy whose run achieved the best recorded
+        final_overlap, or None if no previous run exists.  Reads the
+        opt_refined_*.json (or opt_PARIS_*.json as fallback) from each id
+        directory to compare overlaps, so a bad warm-start run can never
+        silently displace a good previous result."""
+        import glob as _glob, json as _json
+        best_overlap, best_sp = -np.inf, None
+        for id_dir in _glob.glob(os.path.join(base_dir_i, f"paris_{target_func}_id_*")):
+            jsons = _glob.glob(os.path.join(id_dir, "opt_refined_*.json"))
+            if not jsons:
+                jsons = _glob.glob(os.path.join(id_dir, "opt_PARIS_*.json"))
+            if not jsons:
+                continue
+            try:
+                with open(max(jsons, key=os.path.getmtime)) as f:
+                    overlap = _json.load(f).get("results", {}).get("final_overlap", -np.inf)
+            except Exception:
+                continue
+            sps = _glob.glob(os.path.join(id_dir, "starting_point_*.npy"))
+            if not sps or overlap <= best_overlap:
+                continue
+            def _sp_num(p):
+                m = re.search(r'starting_point_(\d+)\.npy$', p)
+                return int(m.group(1)) if m else -1
+            best_overlap, best_sp = overlap, max(sps, key=_sp_num)
+        if best_sp is not None:
+            print(f"[INFO] Best previous overlap: {best_overlap:.6f} → {best_sp}")
+        return best_sp
 
     startindex = _cli.start if _cli.start is not None else cfg.start_index
     endindex   = _cli.end   if _cli.end   is not None else cfg.end_index
@@ -1907,7 +1922,7 @@ if __name__ == "__main__":
         param_dict = dict(zip(params, paramter_selected))
         base_dir_i = os.path.join(base_dir, f"{TYPE}_{i}")
         os.makedirs(base_dir_i, exist_ok=True)
-        prev_sp = _find_latest_starting_point(base_dir_i, target_func)
+        prev_sp = _find_best_starting_point(base_dir_i, target_func)
         if prev_sp is not None:
             starting_point_file = prev_sp
             print(f"[INFO] Warm-starting from previous result: {prev_sp}")

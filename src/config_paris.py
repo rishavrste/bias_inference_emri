@@ -62,8 +62,8 @@ class Config:
         self.nm_xatol = 1e-6
         self.using_evec = False
         self.seed_cloud = 200
-        self.paris_seed_n = 150
-        self.paris_niterations = 1200
+        self.paris_seed_n = 100
+        self.paris_niterations = 1000
         self.paris_temperature = 1.0    # divide score by this to flatten landscape; >1 is more exploratory
         self.nm_fatol = 1e-6
         # Stage-1 DE: ~0.144s/eval serial; popsize=15 → 75 members/gen
@@ -78,7 +78,7 @@ class Config:
         self.prior_sigma_range = 30.0
         self.min_prior_widths = {
             'm1':  50000.0,   # 5% of typical m1=1e6
-            'm2':   1000.0,   # 10% of typical m2=1e4
+            'm2':      0.0,   # no floor; Fisher-based box is adequate
             'a':       0.05,  # floor for near-zero spin; max(0.1*|a|, 0.05) applied in code
             'p0':      1.0,   # ~3% of typical p0~30
             'e0':      0.05,  # critical: fixes Fisher over-tightness at high eccentricity
@@ -92,8 +92,8 @@ class Config:
         self.de_refine_maxiter = 150   # generations
         self.de_refine_popsize = 8
         # NM refinement
-        self.nm_refine_maxiter = 3000
-        self.nm_refine_maxfev  = 5000
+        self.nm_refine_maxiter = 5000
+        self.nm_refine_maxfev  = 10000
         self.overlap_warn_threshold = 0.9  # warn if final overlap < this
         self.refine_prior_sigma_range = 30.0  # tighter bounds for DE/NM (vs prior_sigma_range for PARIS)
 
