@@ -78,8 +78,8 @@ class Config:
         self.prior_sigma_range = 30.0
         self.min_prior_widths = {
             'm1':  50000.0,   # 5% of typical m1=1e6
-            'm2':      0.0,   # no floor; Fisher-based box is adequate
-            'a':       0.05,  # floor for near-zero spin; max(0.1*|a|, 0.05) applied in code
+            'm2':    300.0,   # covers worst-case 0PA m2 bias (~300 at high retrograde spin)
+            'a':       0.10,  # covers observed a bias up to ~0.065 across the grid
             'p0':      1.0,   # ~3% of typical p0~30
             'e0':      0.05,  # critical: fixes Fisher over-tightness at high eccentricity
             'chi2':    0.1,
