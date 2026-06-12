@@ -1825,6 +1825,10 @@ if __name__ == "__main__":
     _parser.add_argument('--type', dest='grid_type', default=None,
                          choices=['IMRI', 'EMRI', 'IMRI_TAIL'],
                          help='Override config TYPE (also updates param_file/result_file/basedir)')
+    _parser.add_argument('--prior-sigma-range', dest='prior_sigma_range', type=float, default=None,
+                         help='Override config prior_sigma_range')
+    _parser.add_argument('--paris-seed-n', dest='paris_seed_n', type=int, default=None,
+                         help='Override config paris_seed_n')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
@@ -1839,6 +1843,10 @@ if __name__ == "__main__":
         cfg.param_file  = cfg.param_files[cfg.TYPE]
         cfg.result_file = cfg.result_files[cfg.TYPE].replace('.npy', f'_{_pa}.npy')
         cfg.basedir = f"/scratch/josh.mat/opt_grid/results/{cfg.TYPE}_{_pa}/"
+    if _cli.prior_sigma_range is not None:
+        cfg.prior_sigma_range = _cli.prior_sigma_range
+    if _cli.paris_seed_n is not None:
+        cfg.paris_seed_n = _cli.paris_seed_n
     print("Start")
 
     file_folder = cfg.param_file

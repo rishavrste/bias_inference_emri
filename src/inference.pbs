@@ -44,9 +44,11 @@ image="/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.s
 module load singularity
 
 EXTRA_ARGS=""
-[ -n "$REFINE_ONLY" ] && EXTRA_ARGS="$EXTRA_ARGS --refine-only"
-[ -n "$RUN_TYPE"    ] && EXTRA_ARGS="$EXTRA_ARGS --run-type $RUN_TYPE"
-[ -n "$GRID_TYPE"   ] && EXTRA_ARGS="$EXTRA_ARGS --type $GRID_TYPE"
+[ -n "$REFINE_ONLY"        ] && EXTRA_ARGS="$EXTRA_ARGS --refine-only"
+[ -n "$RUN_TYPE"           ] && EXTRA_ARGS="$EXTRA_ARGS --run-type $RUN_TYPE"
+[ -n "$GRID_TYPE"          ] && EXTRA_ARGS="$EXTRA_ARGS --type $GRID_TYPE"
+[ -n "$PRIOR_SIGMA_RANGE"  ] && EXTRA_ARGS="$EXTRA_ARGS --prior-sigma-range $PRIOR_SIGMA_RANGE"
+[ -n "$PARIS_SEED_N"       ] && EXTRA_ARGS="$EXTRA_ARGS --paris-seed-n $PARIS_SEED_N"
 
 singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_${IDX}.err.$PBS_JOBID"
 PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
