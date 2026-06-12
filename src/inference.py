@@ -1829,6 +1829,8 @@ if __name__ == "__main__":
                          help='Override config prior_sigma_range')
     _parser.add_argument('--paris-seed-n', dest='paris_seed_n', type=int, default=None,
                          help='Override config paris_seed_n')
+    _parser.add_argument('--paris-temperature', dest='paris_temperature', type=float, default=None,
+                         help='Override config paris_temperature (>1 flattens landscape, more exploratory)')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
@@ -1847,6 +1849,8 @@ if __name__ == "__main__":
         cfg.prior_sigma_range = _cli.prior_sigma_range
     if _cli.paris_seed_n is not None:
         cfg.paris_seed_n = _cli.paris_seed_n
+    if _cli.paris_temperature is not None:
+        cfg.paris_temperature = _cli.paris_temperature
     print("Start")
 
     file_folder = cfg.param_file
