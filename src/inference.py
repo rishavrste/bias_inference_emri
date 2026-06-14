@@ -1280,16 +1280,16 @@ def main(signal_param_array,
                     for j, key in enumerate(param_names_to_infer):
                         result_array[key] = _de_best_r[j]
                     if _refine_with_phase:
-                        result_array['Phi_phi0'] = float(_de_best_r[ndim])
-                        result_array['Phi_r0']   = float(_de_best_r[ndim + 1])
-                        print(f"[REFINE] Best phases: Phi_phi0={_de_best_r[ndim]:.6f}  "
-                              f"Phi_r0={_de_best_r[ndim + 1]:.6f}  "
+                        result_array['Phi_phi0'] = float(_de_best_r[ndim]) % (2 * np.pi)
+                        result_array['Phi_r0']   = float(_de_best_r[ndim + 1]) % (2 * np.pi)
+                        print(f"[REFINE] Best phases: Phi_phi0={result_array['Phi_phi0']:.6f}  "
+                              f"Phi_r0={result_array['Phi_r0']:.6f}  "
                               f"(signal: {ctx['Phi_phi0']:.6f}, {ctx['Phi_r0']:.6f})")
                     elif parameter_selected == 'intrinsic_phase':
-                        result_array['Phi_phi0'] = float(_de_best_r[5])
-                        result_array['Phi_r0']   = float(_de_best_r[6])
-                        print(f"[REFINE] Best phases: Phi_phi0={_de_best_r[5]:.6f}  "
-                              f"Phi_r0={_de_best_r[6]:.6f}  "
+                        result_array['Phi_phi0'] = float(_de_best_r[5]) % (2 * np.pi)
+                        result_array['Phi_r0']   = float(_de_best_r[6]) % (2 * np.pi)
+                        print(f"[REFINE] Best phases: Phi_phi0={result_array['Phi_phi0']:.6f}  "
+                              f"Phi_r0={result_array['Phi_r0']:.6f}  "
                               f"(signal: {ctx['Phi_phi0']:.6f}, {ctx['Phi_r0']:.6f})")
                     add_kwargs['chi2'] = result_array['chi2']
                     final_overlap_refined = calculate_detection_overlap(
@@ -1315,11 +1315,11 @@ def main(signal_param_array,
                 for j, key in enumerate(param_names_to_infer):
                     result_array[key] = _de_best_r[j]
                 if _refine_with_phase:
-                    result_array['Phi_phi0'] = float(_de_best_r[ndim])
-                    result_array['Phi_r0']   = float(_de_best_r[ndim + 1])
+                    result_array['Phi_phi0'] = float(_de_best_r[ndim]) % (2 * np.pi)
+                    result_array['Phi_r0']   = float(_de_best_r[ndim + 1]) % (2 * np.pi)
                 elif parameter_selected == 'intrinsic_phase':
-                    result_array['Phi_phi0'] = float(_de_best_r[5])
-                    result_array['Phi_r0']   = float(_de_best_r[6])
+                    result_array['Phi_phi0'] = float(_de_best_r[5]) % (2 * np.pi)
+                    result_array['Phi_r0']   = float(_de_best_r[6]) % (2 * np.pi)
 
             except Exception as exc:
                 import traceback
