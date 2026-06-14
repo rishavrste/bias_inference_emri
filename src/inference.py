@@ -1285,6 +1285,12 @@ def main(signal_param_array,
                         print(f"[REFINE] Best phases: Phi_phi0={_de_best_r[ndim]:.6f}  "
                               f"Phi_r0={_de_best_r[ndim + 1]:.6f}  "
                               f"(signal: {ctx['Phi_phi0']:.6f}, {ctx['Phi_r0']:.6f})")
+                    elif parameter_selected == 'intrinsic_phase':
+                        result_array['Phi_phi0'] = float(_de_best_r[5])
+                        result_array['Phi_r0']   = float(_de_best_r[6])
+                        print(f"[REFINE] Best phases: Phi_phi0={_de_best_r[5]:.6f}  "
+                              f"Phi_r0={_de_best_r[6]:.6f}  "
+                              f"(signal: {ctx['Phi_phi0']:.6f}, {ctx['Phi_r0']:.6f})")
                     add_kwargs['chi2'] = result_array['chi2']
                     final_overlap_refined = calculate_detection_overlap(
                         result_array['m1'], result_array['m2'], result_array['a'],
@@ -1311,6 +1317,9 @@ def main(signal_param_array,
                 if _refine_with_phase:
                     result_array['Phi_phi0'] = float(_de_best_r[ndim])
                     result_array['Phi_r0']   = float(_de_best_r[ndim + 1])
+                elif parameter_selected == 'intrinsic_phase':
+                    result_array['Phi_phi0'] = float(_de_best_r[5])
+                    result_array['Phi_r0']   = float(_de_best_r[6])
 
             except Exception as exc:
                 import traceback
