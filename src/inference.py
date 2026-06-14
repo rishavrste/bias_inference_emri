@@ -1190,9 +1190,12 @@ def main(signal_param_array,
                 _refine_with_phase = (parameter_selected == 'intrinsic')
                 _de_best = np.asarray(result.x, dtype=float)
                 _rpr = cfg.refine_prior_sigma_range
+                # Pad Fisher sigmas to ndim: phase dims get uniform ±pi half-box
+                _diag_sigma_r = np.full(ndim, np.pi / float(_rpr))
+                _diag_sigma_r[:len(diag_sigma_fisher)] = diag_sigma_fisher
                 _refine_bounds = [
-                    (_de_best[j] - diag_sigma_fisher[j] * _rpr,
-                     _de_best[j] + diag_sigma_fisher[j] * _rpr)
+                    (_de_best[j] - _diag_sigma_r[j] * _rpr,
+                     _de_best[j] + _diag_sigma_r[j] * _rpr)
                     for j in range(ndim)
                 ]
                 if _refine_with_phase:
