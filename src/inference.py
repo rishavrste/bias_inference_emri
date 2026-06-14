@@ -1037,7 +1037,8 @@ def main(signal_param_array,
 
                 print("Fisher-based bounds for optimization:")
                 for i, (lower, upper) in enumerate(bounds):
-                    print(f"  {param_names_to_infer[i]}: [{lower:.6e}, {upper:.6e}]")
+                    pname = _signal_keys[i] if i < len(_signal_keys) else f'param_{i}'
+                    print(f"  {pname}: [{lower:.6e}, {upper:.6e}]")
 
                 def bounded_objective(theta: np.ndarray) -> float:
                     try:
