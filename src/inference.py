@@ -1149,10 +1149,11 @@ def main(signal_param_array,
                 add_kwargs['chi2']=result_array['chi2']
 
                 final_overlap = calculate_detection_overlap(
-                    result_array['m1'], result_array['m2'], result_array['a'], result_array['p0'], result_array['e0'], ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+                    result_array['m1'], result_array['m2'], result_array['a'], result_array['p0'], result_array['e0'], ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'],
                     result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],add_kwargs,
                     maximize_phase=False,
                     **temp_dict)
+                _best_de_overlap = float(final_overlap)
                 print("Overlap of the best point:", final_overlap)
                 if final_overlap > initial_overlap:
                     np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
@@ -1299,6 +1300,8 @@ def main(signal_param_array,
                         result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],
                         add_kwargs, maximize_phase=False, **temp_dict)
                     print(f"[REFINE] Final overlap after NM: {final_overlap_refined:.6f}")
+                    if final_overlap_refined > _best_de_overlap:
+                        _best_de_overlap = float(final_overlap_refined)
                     np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
                     if final_overlap_refined > initial_overlap:
                         np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
@@ -1326,7 +1329,7 @@ def main(signal_param_array,
                 print(f"[ERROR] Differential Evolution optimization failed: "
                       f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
 
-            return result_array, _refine_val
+            return result_array, _best_de_overlap
                 
                 
     elif optimizer == 'paris':
