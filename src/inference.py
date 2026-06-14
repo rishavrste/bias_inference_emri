@@ -1928,24 +1928,37 @@ if __name__ == "__main__":
         silently displace a good previous result."""
         import glob as _glob, json as _json
         best_overlap, best_sp = -np.inf, None
-        for id_dir in _glob.glob(os.path.join(base_dir_i, f"paris_{target_func}_id_*")):
-            jsons = _glob.glob(os.path.join(id_dir, "opt_refined_*.json"))
+
+        def _check_dir(id_dir, json_patterns, fallback_patterns=None):
+            nonlocal best_overlap, best_sp
+            jsons = []
+            for pat in json_patterns:
+                jsons.extend(_glob.glob(os.path.join(id_dir, pat)))
+            if not jsons and fallback_patterns:
+                for pat in fallback_patterns:
+                    jsons.extend(_glob.glob(os.path.join(id_dir, pat)))
             if not jsons:
-                jsons = _glob.glob(os.path.join(id_dir, "opt_PARIS_*.json"))
-            if not jsons:
-                continue
+                return
             try:
                 with open(max(jsons, key=os.path.getmtime)) as f:
-                    overlap = _json.load(f).get("results", {}).get("final_overlap", -np.inf)
+                    d = _json.load(f)
+                    overlap = (d.get("results", {}).get("final_overlap")
+                               or d.get("final_overlap", -np.inf))
             except Exception:
-                continue
+                return
             sps = _glob.glob(os.path.join(id_dir, "starting_point_*.npy"))
             if not sps or overlap <= best_overlap:
-                continue
+                return
             def _sp_num(p):
                 m = re.search(r'starting_point_(\d+)\.npy$', p)
                 return int(m.group(1)) if m else -1
             best_overlap, best_sp = overlap, max(sps, key=_sp_num)
+
+        for id_dir in _glob.glob(os.path.join(base_dir_i, f"paris_{target_func}_id_*")):
+            _check_dir(id_dir, ["opt_refined_*.json"], ["opt_PARIS_*.json"])
+        for id_dir in _glob.glob(os.path.join(base_dir_i, f"differential_evolution_{target_func}_run_id_*")):
+            _check_dir(id_dir, ["opt_differential_evolution_*_id_*.json"])
+
         if best_sp is not None:
             print(f"[INFO] Best previous overlap: {best_overlap:.6f} → {best_sp}")
         return best_sp
