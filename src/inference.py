@@ -1831,6 +1831,18 @@ if __name__ == "__main__":
                          help='Override config paris_seed_n')
     _parser.add_argument('--paris-temperature', dest='paris_temperature', type=float, default=None,
                          help='Override config paris_temperature (>1 flattens landscape, more exploratory)')
+    _parser.add_argument('--seed-cloud', dest='seed_cloud', type=int, default=None,
+                         help='Override config seed_cloud (LHS pool size; must exceed paris_seed_n)')
+    _parser.add_argument('--parameter-selected', dest='parameter_selected', default=None,
+                         choices=['intrinsic', 'intrinsic_phase'],
+                         help='Override config parameter_selected (intrinsic_phase adds Phi_phi0/Phi_r0 to search)')
+    _parser.add_argument('--optimizer', dest='optimizer', default=None,
+                         choices=['paris', 'differential_evolution', 'nelder-mead'],
+                         help='Override config optimizer')
+    _parser.add_argument('--de-maxiter', dest='de_maxiter', type=int, default=None,
+                         help='Override config de_maxiter (DE generations)')
+    _parser.add_argument('--de-popsize', dest='de_popsize', type=int, default=None,
+                         help='Override config de_popsize (population multiplier; total pop = popsize * ndim)')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
@@ -1851,6 +1863,16 @@ if __name__ == "__main__":
         cfg.paris_seed_n = _cli.paris_seed_n
     if _cli.paris_temperature is not None:
         cfg.paris_temperature = _cli.paris_temperature
+    if _cli.seed_cloud is not None:
+        cfg.seed_cloud = _cli.seed_cloud
+    if _cli.parameter_selected is not None:
+        cfg.parameter_selected = _cli.parameter_selected
+    if _cli.optimizer is not None:
+        cfg.optimizer = _cli.optimizer
+    if _cli.de_maxiter is not None:
+        cfg.de_maxiter = _cli.de_maxiter
+    if _cli.de_popsize is not None:
+        cfg.de_popsize = _cli.de_popsize
     print("Start")
 
     file_folder = cfg.param_file
