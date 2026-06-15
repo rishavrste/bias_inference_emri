@@ -1997,6 +1997,9 @@ if __name__ == "__main__":
             starting_point_file = os.path.join(base_dir_i, "starting_point_global_0.npy")
             np.save(starting_point_file, _global_sp)
             print(f"[INFO] Warm-starting from global result array (overlap={result_overlap_array[i]:.6f})")
+            if result_overlap_array[i] >= 0.98:
+                cfg.de_maxiter = cfg.de_maxiter // 2
+                print(f"[INFO] High warm-start overlap (>= 0.98): halving DE iterations to {cfg.de_maxiter}")
         else:
             prev_sp = _find_best_starting_point(base_dir_i, target_func)
             if prev_sp is not None:
