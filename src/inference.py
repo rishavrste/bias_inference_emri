@@ -1063,14 +1063,18 @@ def main(signal_param_array,
                 # Use warm-start as DE x0 so the population seeds near the
                 # best known solution. Phase dims need wrapping into the
                 # signal-centered ±pi bounds (phases are 2pi-periodic).
+                # Intrinsic dims fall back to the signal value if the warm-start
+                # has drifted outside the current Fisher bounds.
                 _de_x0 = theta0.copy()
-                if parameter_selected == 'intrinsic_phase':
-                    for _j in [5, 6]:
-                        _lo, _hi = bounds[_j]
+                _phase_dims = [5, 6] if parameter_selected == 'intrinsic_phase' else []
+                for _j, (_lo, _hi) in enumerate(bounds):
+                    if _j in _phase_dims:
                         while _de_x0[_j] > _hi:
                             _de_x0[_j] -= 2 * np.pi
                         while _de_x0[_j] < _lo:
                             _de_x0[_j] += 2 * np.pi
+                    elif not (_lo <= _de_x0[_j] <= _hi):
+                        _de_x0[_j] = theta_signal[_j]
 
                 result = differential_evolution_optimize(
                     theta0=_de_x0,
