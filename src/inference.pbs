@@ -55,6 +55,8 @@ EXTRA_ARGS=""
 [ -n "$OPTIMIZER"             ] && EXTRA_ARGS="$EXTRA_ARGS --optimizer $OPTIMIZER"
 [ -n "$DE_MAXITER"            ] && EXTRA_ARGS="$EXTRA_ARGS --de-maxiter $DE_MAXITER"
 [ -n "$DE_POPSIZE"            ] && EXTRA_ARGS="$EXTRA_ARGS --de-popsize $DE_POPSIZE"
+[ -n "$TARGET_FUNC"           ] && EXTRA_ARGS="$EXTRA_ARGS --target-func $TARGET_FUNC"
+[ -n "$USE_GLOBAL_WARMSTART"  ] && EXTRA_ARGS="$EXTRA_ARGS --use-global-warmstart"
 
 singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_${IDX}.err.$PBS_JOBID"
 PYTHON=/home/svu/josh.mat/miniconda3/bin/python3

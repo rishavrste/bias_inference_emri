@@ -1859,6 +1859,11 @@ if __name__ == "__main__":
                          help='Override config de_maxiter (DE generations)')
     _parser.add_argument('--de-popsize', dest='de_popsize', type=int, default=None,
                          help='Override config de_popsize (population multiplier; total pop = popsize * ndim)')
+    _parser.add_argument('--target-func', dest='target_func', default=None,
+                         choices=['optimal_snr', 'optimal_snr_phase_max', 'time_max', 'chi2_match'],
+                         help='Override config target_func (optimal_snr uses true overlap; optimal_snr_phase_max maximises over global detector phase)')
+    _parser.add_argument('--use-global-warmstart', dest='use_global_warmstart', action='store_true',
+                         help='Warm-start from the global result array instead of scanning run directories')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
@@ -1889,6 +1894,8 @@ if __name__ == "__main__":
         cfg.de_maxiter = _cli.de_maxiter
     if _cli.de_popsize is not None:
         cfg.de_popsize = _cli.de_popsize
+    if _cli.target_func is not None:
+        cfg.target_func = _cli.target_func
     print("Start")
 
     file_folder = cfg.param_file
@@ -1985,13 +1992,19 @@ if __name__ == "__main__":
         param_dict = dict(zip(params, paramter_selected))
         base_dir_i = os.path.join(base_dir, f"{TYPE}_{i}")
         os.makedirs(base_dir_i, exist_ok=True)
-        prev_sp = _find_best_starting_point(base_dir_i, target_func)
-        if prev_sp is not None:
-            starting_point_file = prev_sp
-            print(f"[INFO] Warm-starting from previous result: {prev_sp}")
+        if _cli.use_global_warmstart and result_overlap_array[i] > 0:
+            _global_sp = dict(zip(params, result_array[i]))
+            starting_point_file = os.path.join(base_dir_i, "starting_point_global_0.npy")
+            np.save(starting_point_file, _global_sp)
+            print(f"[INFO] Warm-starting from global result array (overlap={result_overlap_array[i]:.6f})")
         else:
-            starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
-            np.save(starting_point_file, param_dict)
+            prev_sp = _find_best_starting_point(base_dir_i, target_func)
+            if prev_sp is not None:
+                starting_point_file = prev_sp
+                print(f"[INFO] Warm-starting from previous result: {prev_sp}")
+            else:
+                starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
+                np.save(starting_point_file, param_dict)
     
         # target_func, optimizer,
         # n_channels, startingpoints_file)
