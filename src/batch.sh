@@ -1,39 +1,45 @@
 #!/bin/bash
-#PBS -q auto_free
-#PBS -N 1pa_vs_2pa_IMRI_tail
+# ==============================================================================
+# Example PBS batch script for running inference.py (or tests/check_overlaps.py)
+# on a single GPU node.
+#
+# NOTE: this script is written for the NUS HPC "Hopper" cluster -- it assumes
+# the PBS scheduler, the `module load singularity` environment, and the CUDA
+# singularity image path shown below. It will need to be adapted (PBS
+# directives, module/container setup) to run on any other cluster.
+# ==============================================================================
+
+#PBS -P <YOUR_PROJECT_CODE>          # replace with your PBS project/allocation code
+#PBS -N <JOB_NAME>
 #PBS -l walltime=48:00:00
-#PBS -l select=1:ncpus=4:mpiprocs=1:ompthreads=4:ngpus=1:mem=250gb
-#PBS -o /scratch/e1583490/logs/pbs_output.log
-#PBS -e /scratch/e1583490/logs/pbs_error.log
+#PBS -l select=1:ngpus=1:mem=250gb
+#PBS -o /dev/null
+#PBS -e /dev/null
 #PBS -k oed
 
-set -euo pipefail   # Keep safety flags, but drop set -x
+# --- user-editable run parameters -------------------------------------------
+REPO_DIR="${REPO_DIR:-$HOME/bias_inference_emri}"
+SCRIPT="${SCRIPT:-inference.py}"     # inference.py, or tests/check_overlaps.py
+START_INDEX="${START_INDEX:-0}"      # first case index to process (inclusive)
+END_INDEX="${END_INDEX:-1}"          # last case index to process (exclusive)
+SINGULARITY_IMAGE="${SINGULARITY_IMAGE:-/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif}"
+# ------------------------------------------------------------------------------
 
-# ONE timestamp used everywhere
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-LOG_DIR=/scratch/e1583490/SuperKludege_Optimizations/IMRI_TAIL_1PA_with_Phase_3/logs_$(date +%Y%m%d_%H%M%S)
+LOG_DIR="${REPO_DIR}/src/logs_${TIMESTAMP}"
 mkdir -p "$LOG_DIR"
-
-# Redirect everything ONCE, early, before any real work
-exec > "$LOG_DIR/paris_inference_${TIMESTAMP}.log" 2>&1
-
-# NOW enable -x if you want it — trace goes cleanly into your log
-# set -x   # ← uncomment only when actively debugging a crash
+exec > "$LOG_DIR/run_${TIMESTAMP}.log" 2>&1
 
 echo "Job started at $(date)"
 echo "Running on $(hostname)"
 
-cd /home/svu/e1583490/bias_inference_emri/src
-
-export CUDA_VISIBLE_DEVICES=0
-module load cuda12.4/toolkit/12.4.1
-source /home/svu/e1583490/bias_inference_emri/.venv/bin/activate
-
-which python
-python --version
-nvidia-smi
-echo "$CUDA_VISIBLE_DEVICES"
-
-python inference.py
+module load singularity
+singularity exec --nv -e \
+    "$SINGULARITY_IMAGE" \
+    bash -lc "
+        source '${REPO_DIR}/.venv/bin/activate'
+        cd '${REPO_DIR}/src'
+        START_INDEX=${START_INDEX} END_INDEX=${END_INDEX} python ${SCRIPT}
+    "
 
 echo "Job finished at $(date)"

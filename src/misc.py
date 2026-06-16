@@ -1,9 +1,5 @@
 import os
-import json
-import signal
-import time
-import argparse
-from typing import Tuple, Optional,Dict, Any
+from typing import Tuple, Optional, Dict, Any
 from scipy.signal.windows import tukey
 import numpy as np
 
@@ -20,9 +16,9 @@ import matplotlib.pyplot as plt
 
 try:
     import cupy as cp
-    xp=cp
-except:
-    xp=np
+    xp = cp
+except ImportError:
+    xp = np
     print("CuPy not found, using NumPy instead.")
 
 __all__ = [
@@ -84,8 +80,9 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         if x.shape[0] == 6:
             x[5] = np.clip(x[5], -1.0, 1.0)         # chi2 (intrinsic, no phase)
         if x.shape[0] in (7, 8):
-            x[5] = np.clip(x[5], -_2pi, _2pi)       # Phi_phi0
-            x[6] = np.clip(x[6], -_2pi, _2pi)       # Phi_r0
+            _pi = np.pi
+            x[5] = ((x[5] + _pi) % _2pi) - _pi      # Phi_phi0 → [-pi, pi]
+            x[6] = ((x[6] + _pi) % _2pi) - _pi      # Phi_r0 → [-pi, pi]
         if x.shape[0] == 8:
             x[7] = np.clip(x[7], -1.0, 1.0)         # chi2 (intrinsic + phase)
         return x
@@ -102,8 +99,9 @@ def _clip_physical_params_intrinsic(theta: np.ndarray) -> np.ndarray:
         if x.shape[1] == 6:
             x[:, 5] = np.clip(x[:, 5], -1.0, 1.0)        # chi2 (intrinsic, no phase)
         if x.shape[1] in (7, 8):
-            x[:, 5] = np.clip(x[:, 5], -_2pi, _2pi)      # Phi_phi0
-            x[:, 6] = np.clip(x[:, 6], -_2pi, _2pi)      # Phi_r0
+            _pi = np.pi
+            x[:, 5] = ((x[:, 5] + _pi) % _2pi) - _pi    # Phi_phi0 → [-pi, pi]
+            x[:, 6] = ((x[:, 6] + _pi) % _2pi) - _pi    # Phi_r0 → [-pi, pi]
         if x.shape[1] == 8:
             x[:, 7] = np.clip(x[:, 7], -1.0, 1.0)        # chi2 (intrinsic + phase)
         return x
@@ -735,8 +733,6 @@ def plot_time_series_from_fft(signal_f, dt, title="Time Series"):
     plt.ylabel("Strain")
     plt.legend(loc="upper right")
     plt.show()
-
-import numpy as np
 
 
 def fishinv(M, Fisher, index_of_M=0):
