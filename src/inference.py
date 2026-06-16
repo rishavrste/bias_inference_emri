@@ -1873,6 +1873,8 @@ if __name__ == "__main__":
                          help='Override config paris_seed_n')
     _parser.add_argument('--paris-temperature', dest='paris_temperature', type=float, default=None,
                          help='Override config paris_temperature (>1 flattens landscape, more exploratory)')
+    _parser.add_argument('--paris-niterations', dest='paris_niterations', type=int, default=None,
+                         help='Override config paris_niterations (number of PARIS iterations)')
     _parser.add_argument('--seed-cloud', dest='seed_cloud', type=int, default=None,
                          help='Override config seed_cloud (LHS pool size; must exceed paris_seed_n)')
     _parser.add_argument('--parameter-selected', dest='parameter_selected', default=None,
@@ -1912,6 +1914,8 @@ if __name__ == "__main__":
         cfg.paris_seed_n = _cli.paris_seed_n
     if _cli.paris_temperature is not None:
         cfg.paris_temperature = _cli.paris_temperature
+    if _cli.paris_niterations is not None:
+        cfg.paris_niterations = _cli.paris_niterations
     if _cli.seed_cloud is not None:
         cfg.seed_cloud = _cli.seed_cloud
     if _cli.parameter_selected is not None:
