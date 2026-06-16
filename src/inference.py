@@ -1890,6 +1890,8 @@ if __name__ == "__main__":
                          help='Override config target_func (optimal_snr uses true overlap; optimal_snr_phase_max maximises over global detector phase)')
     _parser.add_argument('--use-global-warmstart', dest='use_global_warmstart', action='store_true',
                          help='Warm-start from the global result array instead of scanning run directories')
+    _parser.add_argument('--from-signal', dest='from_signal', action='store_true',
+                         help='Ignore all warm-starts and start DE from the injected signal parameters')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
@@ -2018,7 +2020,11 @@ if __name__ == "__main__":
         param_dict = dict(zip(params, paramter_selected))
         base_dir_i = os.path.join(base_dir, f"{TYPE}_{i}")
         os.makedirs(base_dir_i, exist_ok=True)
-        if _cli.use_global_warmstart and result_overlap_array[i] > 0:
+        if _cli.from_signal:
+            starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
+            np.save(starting_point_file, param_dict)
+            print(f"[INFO] Starting from injected signal parameters (--from-signal)")
+        elif _cli.use_global_warmstart and result_overlap_array[i] > 0:
             _global_sp = dict(zip(params, result_array[i]))
             starting_point_file = os.path.join(base_dir_i, "starting_point_global_0.npy")
             np.save(starting_point_file, _global_sp)
