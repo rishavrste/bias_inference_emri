@@ -1031,9 +1031,19 @@ def main(signal_param_array,
                     diag_sigma_full[:len(diag_sigma_fisher)] = diag_sigma_fisher
                 else:
                     diag_sigma_full = diag_sigma_fisher[:ndim]
+                # Physical parameter limits (Kerr bound: |a| < 1, use 0.99 for safety)
+                _phys_lo = {'a': -0.99}
+                _phys_hi = {'a':  0.99}
                 bounds = []
                 for i in range(ndim):
-                    bounds.append((theta_ref[i] - diag_sigma_full[i]*prior_sigma_range, theta_ref[i] + diag_sigma_full[i]*prior_sigma_range))
+                    pname = _signal_keys[i] if i < len(_signal_keys) else None
+                    lo = theta_ref[i] - diag_sigma_full[i]*prior_sigma_range
+                    hi = theta_ref[i] + diag_sigma_full[i]*prior_sigma_range
+                    if pname in _phys_lo:
+                        lo = max(lo, _phys_lo[pname])
+                    if pname in _phys_hi:
+                        hi = min(hi, _phys_hi[pname])
+                    bounds.append((lo, hi))
 
                 print("Fisher-based bounds for optimization:")
                 for i, (lower, upper) in enumerate(bounds):
