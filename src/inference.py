@@ -1929,6 +1929,15 @@ if __name__ == "__main__":
         cfg.param_file  = cfg.param_files[cfg.TYPE]
         cfg.result_file = cfg.result_files[cfg.TYPE].replace('.npy', f'_{_pa}.npy')
         cfg.basedir = f"/scratch/josh.mat/opt_grid/results/{cfg.TYPE}_{_pa}/"
+    if cfg.run_type == '1pa_vs_2pa':
+        cfg.min_prior_widths = {
+            'm1':  5000.0,   # 0PA floor / 10
+            'm2':   150.0,   # 0PA floor / 2
+            'a':     0.05,   # 0PA floor / 2
+            'p0':    0.5,    # 0PA floor / 2
+            'e0':    0.05,   # unchanged
+            'chi2':  0.1,    # unchanged
+        }
     if _cli.prior_sigma_range is not None:
         cfg.prior_sigma_range = _cli.prior_sigma_range
     if _cli.paris_seed_n is not None:
