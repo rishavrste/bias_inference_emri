@@ -1028,7 +1028,14 @@ def main(signal_param_array,
                 # Pad phase dimensions with uniform ±pi if intrinsic_phase
                 if len(diag_sigma_fisher) < ndim:
                     diag_sigma_full = np.full(ndim, np.pi / float(prior_sigma_range))
-                    diag_sigma_full[:len(diag_sigma_fisher)] = diag_sigma_fisher
+                    if run_type == '1pa_vs_2pa' and parameter_selected == 'intrinsic_phase':
+                        # theta=[m1,m2,a,p0,e0,Phi_phi0,Phi_r0,chi2]; Fisher=[m1..e0,chi2]
+                        # Phases at 5,6 keep uniform prior; chi2 at idx 7 gets Fisher sigma
+                        _n_intr = len(diag_sigma_fisher) - 1  # 5: m1,m2,a,p0,e0
+                        diag_sigma_full[:_n_intr] = diag_sigma_fisher[:_n_intr]
+                        diag_sigma_full[ndim - 1] = diag_sigma_fisher[-1]  # chi2
+                    else:
+                        diag_sigma_full[:len(diag_sigma_fisher)] = diag_sigma_fisher
                 else:
                     diag_sigma_full = diag_sigma_fisher[:ndim]
                 # Physical parameter limits
@@ -1402,11 +1409,18 @@ def main(signal_param_array,
                     n_fisher = len(b)
                     Q_padded = np.eye(ndim)
                     b_padded = np.full(ndim, np.pi)      # default: uniform [0,2pi]
-                    Q_padded[:n_fisher, :n_fisher] = Q   # intrinsic Fisher block
-                    b_padded[:n_fisher] = b
-                    # For 1PA intrinsic_phase (ndim=8): chi2 is last in both Fisher
-                    # and theta, so the block copy above already handles it correctly
-                    # as long as param_names_to_infer ends with chi2.
+                    if run_type == '1pa_vs_2pa' and parameter_selected == 'intrinsic_phase':
+                        # theta=[m1,m2,a,p0,e0,Phi_phi0,Phi_r0,chi2]; Fisher=[m1..e0,chi2]
+                        # Map Fisher dims [0:n_fisher-1] to theta [0:n_fisher-1], Fisher[-1] to theta[-1]
+                        _n_intr = n_fisher - 1  # 5: m1,m2,a,p0,e0
+                        _fisher_theta = list(range(_n_intr)) + [ndim - 1]  # [0,1,2,3,4,7]
+                        for _fi, _ti in enumerate(_fisher_theta):
+                            b_padded[_ti] = b[_fi]
+                            for _fj, _tj in enumerate(_fisher_theta):
+                                Q_padded[_ti, _tj] = Q[_fi, _fj]
+                    else:
+                        Q_padded[:n_fisher, :n_fisher] = Q   # intrinsic Fisher block
+                        b_padded[:n_fisher] = b
                     Q, b = Q_padded, b_padded
                     print(f"[FISHER] Padded to ndim={ndim}: Fisher dims {n_fisher}, "
                           f"phase dims {ndim - n_fisher} (uniform ±pi prior)")
@@ -1712,7 +1726,12 @@ def main(signal_param_array,
                     diag_sigma_r = np.asarray(fisher_meta['diag_sigma'])
                     if len(diag_sigma_r) < ndim:
                         diag_sigma_full_r = np.full(ndim, np.pi / float(prior_sigma_range))
-                        diag_sigma_full_r[:len(diag_sigma_r)] = diag_sigma_r
+                        if run_type == '1pa_vs_2pa' and parameter_selected == 'intrinsic_phase':
+                            _n_intr_r = len(diag_sigma_r) - 1
+                            diag_sigma_full_r[:_n_intr_r] = diag_sigma_r[:_n_intr_r]
+                            diag_sigma_full_r[ndim - 1] = diag_sigma_r[-1]  # chi2
+                        else:
+                            diag_sigma_full_r[:len(diag_sigma_r)] = diag_sigma_r
                     else:
                         diag_sigma_full_r = diag_sigma_r[:ndim]
                     _rpr = cfg.refine_prior_sigma_range
