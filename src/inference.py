@@ -1031,9 +1031,9 @@ def main(signal_param_array,
                     diag_sigma_full[:len(diag_sigma_fisher)] = diag_sigma_fisher
                 else:
                     diag_sigma_full = diag_sigma_fisher[:ndim]
-                # Physical parameter limits (Kerr bound: |a| < 1, use 0.99 for safety)
-                _phys_lo = {'a': -0.99}
-                _phys_hi = {'a':  0.99}
+                # Physical parameter limits
+                _phys_lo = {'a': -0.99, 'chi2': -1.0}
+                _phys_hi = {'a':  0.99, 'chi2':  1.0}
                 bounds = []
                 for i in range(ndim):
                     pname = _signal_keys[i] if i < len(_signal_keys) else None
@@ -1875,6 +1875,8 @@ if __name__ == "__main__":
                          help='Override config paris_temperature (>1 flattens landscape, more exploratory)')
     _parser.add_argument('--paris-niterations', dest='paris_niterations', type=int, default=None,
                          help='Override config paris_niterations (number of PARIS iterations)')
+    _parser.add_argument('--refine-prior-sigma-range', dest='refine_prior_sigma_range', type=float, default=None,
+                         help='Override config refine_prior_sigma_range (tighter bounds for refine DE/NM stages)')
     _parser.add_argument('--seed-cloud', dest='seed_cloud', type=int, default=None,
                          help='Override config seed_cloud (LHS pool size; must exceed paris_seed_n)')
     _parser.add_argument('--parameter-selected', dest='parameter_selected', default=None,
@@ -1916,6 +1918,8 @@ if __name__ == "__main__":
         cfg.paris_temperature = _cli.paris_temperature
     if _cli.paris_niterations is not None:
         cfg.paris_niterations = _cli.paris_niterations
+    if _cli.refine_prior_sigma_range is not None:
+        cfg.refine_prior_sigma_range = _cli.refine_prior_sigma_range
     if _cli.seed_cloud is not None:
         cfg.seed_cloud = _cli.seed_cloud
     if _cli.parameter_selected is not None:
