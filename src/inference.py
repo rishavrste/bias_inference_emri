@@ -1571,6 +1571,18 @@ def main(signal_param_array,
             cov = covariance_from_fisher_parallelotope(
                 Qp, bp, prior_sigma_range=float(prior_sigma_range)
             )
+            if len(bp) < ndim_local:
+                # Pad Fisher cov to full theta space (same mapping as Q,b padding)
+                n_fisher_p = len(bp)
+                cov_padded = np.diag([(np.pi / float(prior_sigma_range)) ** 2] * ndim_local)
+                if run_type == '1pa_vs_2pa' and parameter_selected == 'intrinsic_phase':
+                    _ft = list(range(n_fisher_p - 1)) + [ndim_local - 1]  # [0,1,2,3,4,7]
+                else:
+                    _ft = list(range(n_fisher_p))
+                for _fi, _ti in enumerate(_ft):
+                    for _fj, _tj in enumerate(_ft):
+                        cov_padded[_ti, _tj] = cov[_fi, _fj]
+                cov = cov_padded
 
             rng = np.random.default_rng()
 
