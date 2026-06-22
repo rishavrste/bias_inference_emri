@@ -300,7 +300,8 @@ def objective_factory(target_func: str,
     - 'phase_match': score = -phase_diff_metric (maximize score => minimize phase diff)
     """
     # Only needed for SNR-based objective
-    if target_func in ('optimal_snr', 'optimal_snr_phase_max','time_max','chi2_match'):
+    if target_func in ('optimal_snr', 'optimal_snr_phase_max', 'time_max', 'chi2_match',
+                       'log_likelihood', 'log_likelihood_phase_max'):
         fixed = {
             'waveform_response': ctx['waveform_response'],
             'PSD': ctx['PSD_funcs'],
@@ -460,6 +461,49 @@ def objective_factory(target_func: str,
 
         return float(val)
 
+    def score_log_likelihood(theta: np.ndarray) -> float:
+        if with_phase == False:
+            if not use_1PA:
+                m1, m2, a, p0, e0 = theta
+                add_kwargs['evolve_1PA'] = False
+                add_kwargs['evolve_2PA'] = False
+                val = calculate_log_likelihood(
+                    m1, m2, a, p0, e0, ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'], ctx['qK'], ctx['phiK'],
+                    ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'], add_kwargs,
+                    maximize_phase=bool(phase_max),
+                    **fixed,)
+            else:
+                m1, m2, a, p0, e0, chi2 = theta
+                add_kwargs['evolve_1PA'] = True
+                add_kwargs['evolve_2PA'] = False
+                add_kwargs['chi2'] = chi2
+                val = calculate_log_likelihood(
+                    m1, m2, a, p0, e0, ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'], ctx['qK'], ctx['phiK'],
+                    ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'], add_kwargs,
+                    maximize_phase=bool(phase_max),
+                    **fixed,)
+        else:
+            if not use_1PA:
+                m1, m2, a, p0, e0, Phi_phi0, Phi_r0 = theta
+                add_kwargs['evolve_1PA'] = False
+                add_kwargs['evolve_2PA'] = False
+                val = calculate_log_likelihood(
+                    m1, m2, a, p0, e0, ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'], ctx['qK'], ctx['phiK'],
+                    Phi_phi0, ctx['Phi_theta0'], Phi_r0, add_kwargs,
+                    maximize_phase=bool(phase_max),
+                    **fixed)
+            else:
+                m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2 = theta
+                add_kwargs['evolve_1PA'] = True
+                add_kwargs['evolve_2PA'] = False
+                add_kwargs['chi2'] = chi2
+                val = calculate_log_likelihood(
+                    m1, m2, a, p0, e0, ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'], ctx['qK'], ctx['phiK'],
+                    Phi_phi0, ctx['Phi_theta0'], Phi_r0, add_kwargs,
+                    maximize_phase=bool(phase_max),
+                    **fixed,)
+        return float(val)
+
 
     if target_func in ('optimal_snr', 'optimal_snr_phase_max'):
         return score_optimal_snr
@@ -467,6 +511,8 @@ def objective_factory(target_func: str,
         return score_time_max
     elif target_func == 'chi2_match':
         return score_chi2_match
+    elif target_func in ('log_likelihood', 'log_likelihood_phase_max'):
+        return score_log_likelihood
     else:
         raise ValueError(f"Unknown target_func: {target_func}")
         
@@ -829,7 +875,7 @@ def main(signal_param_array,
     #no 1PA for analysis manifold
     #del temp_dict
     
-    phase_max_flag = (target_func == 'optimal_snr_phase_max')
+    phase_max_flag = target_func in ('optimal_snr_phase_max', 'log_likelihood_phase_max')
     
     raw_objective = objective_factory(
         target_func=target_func,
@@ -997,9 +1043,13 @@ def main(signal_param_array,
                 if parameter_selected != 'intrinsic_phase':
                     _signal_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2']
             theta_signal = np.array([ctx[k] for k in _signal_keys[:ndim]], dtype=float)
-            theta_ref = theta_signal
-            print(f"DE bounds centred on signal: {dict(zip(_signal_keys[:ndim], theta_signal))}")
-            print(f"  (warm-start theta0={theta0})")
+            if _cli.center_on_warmstart and theta0 is not None:
+                theta_ref = theta0
+                print(f"DE bounds centred on warm-start: {dict(zip(_signal_keys[:ndim], theta0))}")
+            else:
+                theta_ref = theta_signal
+                print(f"DE bounds centred on signal: {dict(zip(_signal_keys[:ndim], theta_signal))}")
+                print(f"  (warm-start theta0={theta0})")
             try:
                 import cupy as cP
                 USE_GPU = True
@@ -1921,12 +1971,19 @@ if __name__ == "__main__":
     _parser.add_argument('--de-popsize', dest='de_popsize', type=int, default=None,
                          help='Override config de_popsize (population multiplier; total pop = popsize * ndim)')
     _parser.add_argument('--target-func', dest='target_func', default=None,
-                         choices=['optimal_snr', 'optimal_snr_phase_max', 'time_max', 'chi2_match'],
-                         help='Override config target_func (optimal_snr uses true overlap; optimal_snr_phase_max maximises over global detector phase)')
+                         choices=['optimal_snr', 'optimal_snr_phase_max', 'time_max', 'chi2_match',
+                                  'log_likelihood', 'log_likelihood_phase_max'],
+                         help='Override config target_func. log_likelihood_phase_max should be used for 0PA (phase not in theta); log_likelihood for 1PA (phase in theta).')
     _parser.add_argument('--use-global-warmstart', dest='use_global_warmstart', action='store_true',
                          help='Warm-start from the global result array instead of scanning run directories')
     _parser.add_argument('--from-signal', dest='from_signal', action='store_true',
                          help='Ignore all warm-starts and start DE from the injected signal parameters')
+    _parser.add_argument('--result-suffix', dest='result_suffix', type=str, default='',
+                         help='Suffix appended to result file names before .npy (e.g. _mle). Warm-start always reads from the base (unsuffixed) result files.')
+    _parser.add_argument('--no-prior-floor', dest='no_prior_floor', action='store_true',
+                         help='Disable min_prior_widths floor so prior width is set purely by Fisher sigma × PSR. Use for warm-started searches where the start is already near the optimum.')
+    _parser.add_argument('--center-on-warmstart', dest='center_on_warmstart', action='store_true',
+                         help='Centre DE bounds on the warm-start (theta0) instead of the true signal. Use with --no-prior-floor for MLE warm-started searches.')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
@@ -1950,6 +2007,9 @@ if __name__ == "__main__":
             'e0':    0.05,   # unchanged
             'chi2':  0.1,    # unchanged
         }
+    if _cli.no_prior_floor:
+        cfg.min_prior_widths = None
+        print("[INFO] --no-prior-floor: min_prior_widths disabled; prior width = Fisher sigma × PSR only")
     if _cli.prior_sigma_range is not None:
         cfg.prior_sigma_range = _cli.prior_sigma_range
     if _cli.paris_seed_n is not None:
@@ -1991,6 +2051,26 @@ if __name__ == "__main__":
         print(f"[INFO] Created overlap array: {overlap_folder}")
     else:
         result_overlap_array = np.load(overlap_folder)
+
+    # When a result suffix is requested (e.g. _mle), warm-start always reads from the
+    # base (overlap-opt) files; output goes to the suffixed files.
+    warmstart_result_array  = result_array
+    warmstart_overlap_array = result_overlap_array
+    if _cli.result_suffix:
+        result_folder  = result_folder.replace('.npy', f'{_cli.result_suffix}.npy')
+        overlap_folder = result_folder.replace('.npy', '_overlaps.npy')
+        if os.path.exists(result_folder):
+            result_array = np.load(result_folder)
+        else:
+            result_array = np.zeros_like(parameter_array)
+            np.save(result_folder, result_array)
+            print(f"[INFO] Created suffixed result array: {result_folder}")
+        if os.path.exists(overlap_folder):
+            result_overlap_array = np.load(overlap_folder)
+        else:
+            result_overlap_array = np.zeros(len(parameter_array), dtype=float)
+            np.save(overlap_folder, result_overlap_array)
+            print(f"[INFO] Created suffixed overlap array: {overlap_folder}")
 
     param_names_to_infer = cfg.param_names_to_infer
     parameter_selected = cfg.parameter_selected
@@ -2072,12 +2152,12 @@ if __name__ == "__main__":
             starting_point_file = os.path.join(base_dir_i, "starting_point_0.npy")
             np.save(starting_point_file, param_dict)
             print(f"[INFO] Starting from injected signal parameters (--from-signal)")
-        elif _cli.use_global_warmstart and result_overlap_array[i] > 0:
-            _global_sp = dict(zip(params, result_array[i]))
+        elif _cli.use_global_warmstart and warmstart_overlap_array[i] > 0:
+            _global_sp = dict(zip(params, warmstart_result_array[i]))
             starting_point_file = os.path.join(base_dir_i, "starting_point_global_0.npy")
             np.save(starting_point_file, _global_sp)
-            print(f"[INFO] Warm-starting from global result array (overlap={result_overlap_array[i]:.6f})")
-            if result_overlap_array[i] >= 0.98:
+            print(f"[INFO] Warm-starting from global result array (overlap={warmstart_overlap_array[i]:.6f})")
+            if warmstart_overlap_array[i] >= 0.98:
                 cfg.de_maxiter = cfg.de_maxiter // 2
                 print(f"[INFO] High warm-start overlap (>= 0.98): halving DE iterations to {cfg.de_maxiter}")
         else:

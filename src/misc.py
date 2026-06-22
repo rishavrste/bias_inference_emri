@@ -35,6 +35,7 @@ __all__ = [
     # Analysis & metrics
     "calculate_detection_snr",
     "calculate_detection_overlap",
+    "calculate_log_likelihood",
     "calculate_time_max",
     "chi2_match",
     "inner_prod",
@@ -460,6 +461,41 @@ def calculate_detection_snr(m1, m2, a, p0, e0, Y0, dist, qS,phiS, qK, phiK,
         print(f"[WARN] SNR computation returned {snr}; setting to 0")
         return -np.inf
     return float(snr)
+
+def calculate_log_likelihood(m1, m2, a, p0, e0, Y0, dist, qS, phiS, qK, phiK,
+                    Phi_phi0, Phi_theta0, Phi_r0, add_kwargs,
+                    maximize_phase=False,
+                    **fixed):
+    """Return ln L(lambda) = <h_true|h(lambda)> - 0.5*<h(lambda)|h(lambda)>.
+
+    Phase-maximised cross-term when maximize_phase=True (uses inner_prod_without_phase).
+    The self-norm <h|h> is phase-independent and is always subtracted in full.
+    """
+    xp = cp if fixed['use_gpu'] else np
+    signal = fixed['waveform_true_fft']
+    waveform_response = fixed['waveform_response']
+    wave_params = [m1, m2, a, p0, e0, Y0, dist, qS, phiS, qK, phiK,
+                   Phi_phi0, Phi_theta0, Phi_r0, add_kwargs['chi2'],
+                   add_kwargs['evolve_1PA'], add_kwargs['evolve_primary'], add_kwargs['evolve_2PA']]
+    emri_kwargs = {"T": fixed['T'], "dt": fixed['dt'], 'chi2': add_kwargs['chi2'],
+                   'evolve_1PA': add_kwargs['evolve_1PA'],
+                   'evolve_primary': add_kwargs['evolve_primary'],
+                   'evolve_2PA': add_kwargs['evolve_2PA']}
+    nchannels = signal.shape[0]
+    h = xp.array(waveform_response(*wave_params, **emri_kwargs))[0:nchannels, :]
+    PSD = fixed['PSD']
+    h_f = compute_fft_with_windowing(h, fixed['dt'], fixed['N_fiducial'],
+                                     use_gpu=fixed['use_gpu'], n_channels=nchannels)
+    self_term = inner_prod(h_f, h_f, PSD, fixed['delta_f'], xp=xp)
+    if maximize_phase:
+        cross_term = inner_prod_without_phase(signal, h_f, PSD, fixed['delta_f'], xp=xp)
+    else:
+        cross_term = inner_prod(signal, h_f, PSD, fixed['delta_f'], xp=xp)
+    log_L = cross_term - 0.5 * self_term
+    if xp.isnan(log_L) or xp.isinf(log_L):
+        print(f"[WARN] log_likelihood returned {log_L}; setting to -inf")
+        return -np.inf
+    return float(log_L)
 
 def timemax_correlation(h1, h2,dt, PSD, xp=np):
 

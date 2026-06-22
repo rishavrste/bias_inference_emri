@@ -1,0 +1,27 @@
+#!/bin/bash
+# Compute rho(lambda_*)/rho_true vs overlap for all 0PA IMRI_TAIL best-fit points.
+# Submit:
+#   qsub src/check_snr_ratios.pbs
+
+#PBS -P CFP03-CF-051
+#PBS -j oe
+#PBS -k oed
+#PBS -N snr_ratio_check
+#PBS -q auto
+#PBS -l select=1:ngpus=1:mem=128gb
+#PBS -l walltime=04:00:00
+
+cd $PBS_O_WORKDIR
+
+LOG_DIR=/scratch/josh.mat/opt_grid/logs_inference
+mkdir -p "$LOG_DIR"
+
+image="/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif"
+module load singularity
+
+singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/snr_ratio_check.out.$PBS_JOBID" 2>&1
+PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
+export PYTHONUNBUFFERED=1
+cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
+\$PYTHON check_snr_ratios.py
+EOF

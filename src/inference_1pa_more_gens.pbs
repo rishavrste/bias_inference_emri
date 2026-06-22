@@ -1,0 +1,42 @@
+#!/bin/bash
+# 1PA follow-up: FROM_SIGNAL, PSR=12, more generations and larger population.
+# Targets all points still < 0.99 after previous runs.
+# Submit:
+#   qsub -J 0-11 src/inference_1pa_more_gens.pbs
+#
+# Array index → grid point mapping:
+#   0→4  1→5  2→6  3→9  4→10  5→14  6→15  7→16  8→19  9→20  10→21  11→24
+
+#PBS -P CFP03-CF-051
+#PBS -j oe
+#PBS -k oed
+#PBS -N inference_1pa_more_gens
+#PBS -q auto
+#PBS -l select=1:ngpus=1:mem=128gb
+#PBS -l walltime=10:00:00
+
+cd $PBS_O_WORKDIR
+
+POINTS=(4 5 6 9 10 14 15 16 19 20 21 24)
+IDX=${POINTS[$PBS_ARRAY_INDEX]}
+END=$((IDX + 1))
+
+LOG_DIR=/scratch/josh.mat/opt_grid/logs_inference
+mkdir -p "$LOG_DIR"
+
+image="/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif"
+module load singularity
+
+singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_${IDX}.err.$PBS_JOBID"
+PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
+export PYTHONUNBUFFERED=1
+cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
+\$PYTHON inference.py --start $IDX --end $END \
+    --run-type 1pa_vs_2pa \
+    --type IMRI_TAIL \
+    --optimizer differential_evolution \
+    --prior-sigma-range 12 \
+    --from-signal \
+    --de-maxiter 5000 \
+    --de-popsize 15
+EOF

@@ -1,0 +1,44 @@
+#!/bin/bash
+# 0PA EMRI MLE run: maximise ln L = <h_true|h> - 0.5*<h|h> instead of overlap.
+# Warm-starts from the existing overlap-optimal result array (base files, no suffix).
+# Bounds centred on warm-start (not signal) with PSR=3 and no prior floor.
+# Writes to result_parameter_array_EMRI_0pa_mle.npy.
+# Submit:
+#   qsub -J 0-24 src/inference_0pa_emri_mle.pbs
+
+#PBS -P CFP03-CF-051
+#PBS -j oe
+#PBS -k oed
+#PBS -N inference_0pa_emri_mle
+#PBS -q auto
+#PBS -l select=1:ngpus=1:mem=128gb
+#PBS -l walltime=02:00:00
+
+cd $PBS_O_WORKDIR
+
+IDX=$PBS_ARRAY_INDEX
+END=$((IDX + 1))
+
+LOG_DIR=/scratch/josh.mat/opt_grid/logs_inference
+mkdir -p "$LOG_DIR"
+
+image="/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif"
+module load singularity
+
+singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_0pa_emri_mle_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_0pa_emri_mle_${IDX}.err.$PBS_JOBID"
+PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
+export PYTHONUNBUFFERED=1
+cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
+\$PYTHON inference.py --start $IDX --end $END \
+    --run-type 0pa_vs_2pa \
+    --type EMRI \
+    --optimizer differential_evolution \
+    --prior-sigma-range 3 \
+    --no-prior-floor \
+    --center-on-warmstart \
+    --use-global-warmstart \
+    --target-func log_likelihood_phase_max \
+    --result-suffix _mle \
+    --de-maxiter 1000 \
+    --de-popsize 10
+EOF
