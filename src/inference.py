@@ -1123,7 +1123,7 @@ def main(signal_param_array,
                         elapsed = (time.time() - _de_t1_start) / 60
                         score = -float(bounded_objective(xk))
                         print(f"{_ts()} [DE stage-1] gen={g:4d}/{cfg.de_maxiter}  "
-                              f"best_overlap={score:.6e}  convergence={convergence:.4f}  "
+                              f"best_score={score:.6e}  convergence={convergence:.4f}  "
                               f"elapsed={elapsed:.1f}min")
                     return False
 
@@ -1351,7 +1351,7 @@ def main(signal_param_array,
                     if -_de_refine_result.fun > _refine_val:
                         _de_best_r = np.asarray(_de_refine_result.x, dtype=float)
                         _refine_val = -_de_refine_result.fun
-                        print(f"{_ts()} [REFINE] DE improved overlap to {_refine_val:.6e}  "
+                        print(f"{_ts()} [REFINE] DE improved score to {_refine_val:.6e}  "
                               f"({_de_refine_elapsed:.1f} min, {_de_refine_result.nfev} evals)")
                     else:
                         print(f"{_ts()} [REFINE] DE did not improve "
@@ -1378,7 +1378,7 @@ def main(signal_param_array,
                     if -nm_refine_result.fun > _refine_val:
                         _de_best_r = np.asarray(nm_refine_result.x, dtype=float)
                         _refine_val = -nm_refine_result.fun
-                        print(f"{_ts()} [REFINE] NM improved overlap to {_refine_val:.6e}  "
+                        print(f"{_ts()} [REFINE] NM improved score to {_refine_val:.6e}  "
                               f"({_nm_refine_elapsed:.1f} min, {nm_refine_result.nfev} evals, "
                               f"converged={nm_refine_result.success})")
                     else:
@@ -2232,9 +2232,9 @@ if __name__ == "__main__":
             _disk_overlap_array[i] = new_overlap
             np.save(result_folder, _disk_result_array)
             np.save(overlap_folder, _disk_overlap_array)
-            print(f"[SAVE] Global result array updated for point {i}: overlap={new_overlap:.6f} (was {existing_overlap:.6f})")
+            print(f"[SAVE] Global result array updated for point {i}: score={new_overlap:.6f} (was {existing_overlap:.6f})")
         else:
-            print(f"[SKIP] Global result array NOT updated for point {i}: {new_overlap:.6f} <= existing {existing_overlap:.6f}")
+            print(f"[SKIP] Global result array NOT updated for point {i}: score {new_overlap:.6f} <= existing {existing_overlap:.6f}")
 
 
 
