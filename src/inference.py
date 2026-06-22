@@ -1238,11 +1238,23 @@ def main(signal_param_array,
                     **temp_dict)
                 _best_de_overlap = float(final_overlap)
                 print("Overlap of the best point:", final_overlap)
-                if final_overlap > initial_overlap:
-                    np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
-                    print(f"[SAVE] starting_point updated (DE): {final_overlap:.6f} > {initial_overlap:.6f}")
+                # For MLE target functions, use the log-likelihood as the comparison
+                # metric instead of overlap: the MLE parameters may have lower overlap
+                # than the warm-start even though they are the preferred result.
+                if target_func in ('log_likelihood', 'log_likelihood_phase_max'):
+                    _best_de_overlap = -float(result.fun)
+                    _warmstart_score = float(objective(theta0)) if theta0 is not None else -np.inf
+                    _score_label = f"log_L={_best_de_overlap:.6f}"
+                    _is_better = _best_de_overlap > _warmstart_score
                 else:
-                    print(f"[SKIP] starting_point NOT updated (DE): {final_overlap:.6f} <= {initial_overlap:.6f} — warm-start kept")
+                    _warmstart_score = float(initial_overlap)
+                    _score_label = f"overlap={final_overlap:.6f}"
+                    _is_better = final_overlap > initial_overlap
+                if _is_better:
+                    np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                    print(f"[SAVE] starting_point updated (DE): {_score_label}")
+                else:
+                    print(f"[SKIP] starting_point NOT updated (DE): {_score_label} — warm-start kept")
                 out = {
                     'optimizer': 'differential_evolution',
                     'target_func': target_func,
@@ -1287,16 +1299,28 @@ def main(signal_param_array,
                     _phir0_init = float(result_array['Phi_r0']) % (2 * np.pi)
                     _de_best_r = np.append(_de_best, [_phi0_init, _phir0_init])
                     _refine_bounds_r = _refine_bounds + [(0.0, 2*np.pi), (0.0, 2*np.pi)]
-                    def _neg_obj_r(theta):
-                        try:
-                            return -float(calculate_detection_overlap(
-                                theta[0], theta[1], theta[2], theta[3], theta[4],
-                                ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'],
-                                ctx['qK'], ctx['phiK'],
-                                theta[5], ctx['Phi_theta0'], theta[6],
-                                add_kwargs, maximize_phase=False, **temp_dict))
-                        except Exception:
-                            return np.inf
+                    if target_func in ('log_likelihood', 'log_likelihood_phase_max'):
+                        def _neg_obj_r(theta):
+                            try:
+                                return -float(calculate_log_likelihood(
+                                    theta[0], theta[1], theta[2], theta[3], theta[4],
+                                    ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'],
+                                    ctx['qK'], ctx['phiK'],
+                                    theta[5], ctx['Phi_theta0'], theta[6],
+                                    add_kwargs, maximize_phase=False, **temp_dict))
+                            except Exception:
+                                return np.inf
+                    else:
+                        def _neg_obj_r(theta):
+                            try:
+                                return -float(calculate_detection_overlap(
+                                    theta[0], theta[1], theta[2], theta[3], theta[4],
+                                    ctx['Y0'], ctx['dist'], ctx['qS'], ctx['phiS'],
+                                    ctx['qK'], ctx['phiK'],
+                                    theta[5], ctx['Phi_theta0'], theta[6],
+                                    add_kwargs, maximize_phase=False, **temp_dict))
+                            except Exception:
+                                return np.inf
                 else:
                     _de_best_r = _de_best.copy()
                     _refine_bounds_r = _refine_bounds
@@ -1383,14 +1407,23 @@ def main(signal_param_array,
                         result_array['Phi_phi0'], ctx['Phi_theta0'], result_array['Phi_r0'],
                         add_kwargs, maximize_phase=False, **temp_dict)
                     print(f"[REFINE] Final overlap after NM: {final_overlap_refined:.6f}")
-                    if final_overlap_refined > _best_de_overlap:
-                        _best_de_overlap = float(final_overlap_refined)
-                    np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
-                    if final_overlap_refined > initial_overlap:
-                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
-                        print(f"[SAVE] starting_point updated (refined): {final_overlap_refined:.6f} > {initial_overlap:.6f}")
+                    if target_func in ('log_likelihood', 'log_likelihood_phase_max'):
+                        # Use the log-likelihood tracked by _refine_val as the score.
+                        # final_overlap_refined is for logging only; do not compare
+                        # overlap against log_L in _best_de_overlap.
+                        if _refine_val > _best_de_overlap:
+                            _best_de_overlap = _refine_val
+                        _refine_is_better = _refine_val > _warmstart_score
                     else:
-                        print(f"[SKIP] starting_point NOT updated (refined): {final_overlap_refined:.6f} <= {initial_overlap:.6f} — warm-start kept")
+                        if final_overlap_refined > _best_de_overlap:
+                            _best_de_overlap = float(final_overlap_refined)
+                        _refine_is_better = final_overlap_refined > initial_overlap
+                    np.save(os.path.join(idx_dir, f"results_refined_{id+1}_time_{timestamp}.npy"), result_array)
+                    if _refine_is_better:
+                        np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
+                        print(f"[SAVE] starting_point updated (refined): {_best_de_overlap:.6f}")
+                    else:
+                        print(f"[SKIP] starting_point NOT updated (refined): {_best_de_overlap:.6f} — warm-start kept")
                 except Exception as exc_nm:
                     import traceback
                     print(f"[WARN] NM phase polish failed: {exc_nm}\n{traceback.format_exc()}")
