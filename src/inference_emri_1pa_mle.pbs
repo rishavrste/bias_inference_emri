@@ -34,6 +34,7 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --run-type 1pa_vs_2pa \
     --type EMRI \
     --optimizer differential_evolution \
+    --parameter-selected intrinsic_phase \
     --prior-sigma-range 1 \
     --no-prior-floor \
     --center-on-warmstart \
