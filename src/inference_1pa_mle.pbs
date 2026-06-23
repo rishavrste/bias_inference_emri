@@ -1,10 +1,10 @@
 #!/bin/bash
 # 1PA IMRI_TAIL MLE run: maximise ln L = <h_true|h> - 0.5*<h|h>.
 # Uses log_likelihood with intrinsic_phase (Phi_phi0, Phi_r0, chi2 in theta).
-# Starts from injected signal params (--from-signal) because the IMRI_TAIL
-# overlap-optimal base file has corrupt chi2 values (up to 64) from a
-# bounds-free earlier run; signal params (chi2=0.95) are a clean starting point.
-# PSR=3, no prior floor, bounds centred on signal starting point.
+# Warm-starts from overlap-optimal result array; writes to _mle files.
+# Note: chi2 column in the base file was patched to 0.95 (signal value) because
+# the original run had no chi2 bounds and produced unphysical values.
+# PSR=3, no prior floor, bounds centred on warm-start.
 # Submit:
 #   qsub -J 0-24 src/inference_1pa_mle.pbs
 
@@ -39,7 +39,7 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --prior-sigma-range 3 \
     --no-prior-floor \
     --center-on-warmstart \
-    --from-signal \
+    --use-global-warmstart \
     --target-func log_likelihood \
     --result-suffix _mle \
     --de-maxiter 1000 \
