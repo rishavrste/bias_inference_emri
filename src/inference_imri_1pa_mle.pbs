@@ -40,6 +40,6 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --use-global-warmstart \
     --target-func log_likelihood \
     --result-suffix _mle \
-    --de-maxiter 1000 \
+    --de-maxiter 150 \
     --de-popsize 10
 EOF
