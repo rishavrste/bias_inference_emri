@@ -4,7 +4,7 @@
 # Warm-starts from overlap-optimal result array; writes to _mle files.
 # Note: chi2 column in the base file was patched to 0.95 (signal value) because
 # the original run had no chi2 bounds and produced unphysical values.
-# PSR=3, no prior floor, bounds centred on warm-start.
+# PSR=1 (tight): ill-conditioned Fisher for IMRI_TAIL causes runaways at PSR=3.
 # Submit:
 #   qsub -J 0-24 src/inference_1pa_mle.pbs
 
@@ -36,7 +36,7 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --type IMRI_TAIL \
     --optimizer differential_evolution \
     --parameter-selected intrinsic_phase \
-    --prior-sigma-range 3 \
+    --prior-sigma-range 1 \
     --no-prior-floor \
     --center-on-warmstart \
     --use-global-warmstart \
