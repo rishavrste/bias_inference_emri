@@ -1,9 +1,12 @@
 #!/bin/bash
 # EMRI 1PA MLE run: maximise ln L = <h_true|h> - 0.5*<h|h>.
 # Uses log_likelihood (phase in theta for 1PA).
-# Warm-starts from overlap-optimal result array; writes to _mle files.
-# PSR=1 (tight): warm-start is already at overlap~1.0, only a polish needed.
-# No prior floor, bounds centred on warm-start.
+# Warm-starts from overlap-optimal result array (overlap~1.0 for all pts).
+#
+# At SNR=20 the 1PA/2PA parameter bias is below 1 Fisher sigma and
+# undetectable. This run uses a minimal DE (50 gens, popsize=5) just to
+# seed the NM polish, which then converges to the SNR=20 MLE. PSR=0.1
+# keeps the search in a tiny neighbourhood around the warm-start.
 # Submit:
 #   qsub -J 0-24 src/inference_emri_1pa_mle.pbs
 
@@ -35,12 +38,12 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --type EMRI \
     --optimizer differential_evolution \
     --parameter-selected intrinsic_phase \
-    --prior-sigma-range 1 \
+    --prior-sigma-range 0.1 \
     --no-prior-floor \
     --center-on-warmstart \
     --use-global-warmstart \
     --target-func log_likelihood \
     --result-suffix _mle \
-    --de-maxiter 1000 \
-    --de-popsize 10
+    --de-maxiter 50 \
+    --de-popsize 5
 EOF
