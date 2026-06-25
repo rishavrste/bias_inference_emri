@@ -1,10 +1,11 @@
 #!/bin/bash
 # 1PA IMRI_TAIL MLE run: maximise ln L = <h_true|h> - 0.5*<h|h>.
 # Uses log_likelihood with intrinsic_phase (Phi_phi0, Phi_r0, chi2 in theta).
-# Warm-starts from overlap-optimal result array; writes to _mle files.
-# Note: chi2 column in the base file was patched to 0.95 (signal value) because
-# the original run had no chi2 bounds and produced unphysical values.
-# PSR=1 (tight): ill-conditioned Fisher for IMRI_TAIL causes runaways at PSR=3.
+# Starts from SIGNAL parameters (--from-signal) because the overlap-optimal base
+# file had unphysical chi2 (>>1) across all 25 points — the colleague's original
+# run did not clip chi2 to [-1,1]. The warmstart was therefore unusable.
+# PSR=3 gives wide-enough Fisher bounds to cover the large 1PA/2PA bias in
+# IMRI_TAIL while keeping chi2 clipped to [-1,1] via special bounds in the code.
 # Submit:
 #   qsub -J 0-24 src/inference_1pa_mle.pbs
 
@@ -14,7 +15,7 @@
 #PBS -N inference_1pa_mle
 #PBS -q auto
 #PBS -l select=1:ngpus=1:mem=128gb
-#PBS -l walltime=02:00:00
+#PBS -l walltime=04:00:00
 
 cd $PBS_O_WORKDIR
 
@@ -36,10 +37,10 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --type IMRI_TAIL \
     --optimizer differential_evolution \
     --parameter-selected intrinsic_phase \
-    --prior-sigma-range 1 \
+    --prior-sigma-range 3 \
     --no-prior-floor \
     --center-on-warmstart \
-    --use-global-warmstart \
+    --from-signal \
     --target-func log_likelihood \
     --result-suffix _mle \
     --de-maxiter 150 \
