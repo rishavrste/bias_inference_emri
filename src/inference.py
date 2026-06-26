@@ -1385,7 +1385,11 @@ def main(signal_param_array,
                         print(f"{_ts()} [REFINE] NM did not improve "
                               f"({-nm_refine_result.fun:.6e} vs {_refine_val:.6e}, "
                               f"{_nm_refine_elapsed:.1f} min, converged={nm_refine_result.success})")
-                    for j, key in enumerate(param_names_to_infer):
+                    # Use _signal_keys[:ndim] so intrinsic_phase (ndim=8) maps
+                    # [m1,m2,a,p0,e0,Phi_phi0,Phi_r0,chi2] correctly.
+                    # param_names_to_infer omits Phi_phi0/Phi_r0 for 1PA, so
+                    # chi2 would be incorrectly overwritten with _de_best_r[5].
+                    for j, key in enumerate(_signal_keys[:ndim]):
                         result_array[key] = _de_best_r[j]
                     if _refine_with_phase:
                         result_array['Phi_phi0'] = float(_de_best_r[ndim]) % (2 * np.pi)
@@ -1431,7 +1435,9 @@ def main(signal_param_array,
                 # Safety: ensure result_array holds the best result across all stages.
                 # Idempotent when NM succeeded; corrects result_array when NM threw
                 # before it could apply _de_best_r.
-                for j, key in enumerate(param_names_to_infer):
+                # Use _signal_keys[:ndim] (same fix as above) so chi2 is not
+                # overwritten by Phi_phi0 for intrinsic_phase 1PA runs.
+                for j, key in enumerate(_signal_keys[:ndim]):
                     result_array[key] = _de_best_r[j]
                 if _refine_with_phase:
                     result_array['Phi_phi0'] = float(_de_best_r[ndim]) % (2 * np.pi)

@@ -1,9 +1,8 @@
 #!/bin/bash
-# IMRI 0PA MLE re-run: targeted re-run for points that diverged with PSR=3.
-# Uses PSR=1 to prevent ill-conditioned Fisher bounds causing runaways.
-# Warm-starts from overlap-optimal base file; overwrites _mle files if improved.
-# Submit for failing pts 3, 4, 9:
-#   qsub -J 3-4 src/inference_imri_0pa_mle_rerun.pbs
+# IMRI 0PA MLE re-run: targeted re-run for pt9 which failed at PSR=1 (DE
+# converged early at gen 300 to log_L=160, well below warmstart log_L=187).
+# Switches to from-signal start with PSR=3 and prior floors.
+# Submit for pt 9:
 #   qsub -J 9-9 src/inference_imri_0pa_mle_rerun.pbs
 
 #PBS -P CFP03-CF-051
@@ -33,12 +32,11 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --run-type 0pa_vs_2pa \
     --type IMRI \
     --optimizer differential_evolution \
-    --prior-sigma-range 1 \
-    --no-prior-floor \
+    --prior-sigma-range 3 \
     --center-on-warmstart \
-    --use-global-warmstart \
+    --from-signal \
     --target-func log_likelihood_phase_max \
     --result-suffix _mle \
-    --de-maxiter 1000 \
-    --de-popsize 10
+    --de-maxiter 500 \
+    --de-popsize 15
 EOF
