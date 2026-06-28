@@ -529,7 +529,8 @@ def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, xat
 from scipy.optimize import differential_evolution
 def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int = 1000, tol: float = 1e-4, atol: float = 1e-5,x0: Optional[np.ndarray] = None,
                                     fisher_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None,init='sobol',seed: Optional[int] = 42,
-                                    popsize: int = 15, callback=None, workers: int = 1):
+                                    popsize: int = 15, callback=None, workers: int = 1,
+                                    chi2_bounds: Optional[Tuple[float, float]] = None):
     from concurrent.futures import ThreadPoolExecutor
     if fisher_bounds is not None:
         bounds = fisher_bounds
@@ -537,8 +538,9 @@ def differential_evolution_optimize(theta0: np.ndarray, objective, maxiter: int 
         bounds = [(x*(1-1e-3), x*(1+1e-3)) for x in theta0]  # Define bounds around initial guess
     if theta0.shape[0] == 6 or theta0.shape[0] == 8:
         print("Earlier Bound are :", bounds)
-        print("\nApplying special bounds for chi2\n")
-        bounds[-1] = (-1, 1)
+        _chi2_b = chi2_bounds if chi2_bounds is not None else (-1, 1)
+        bounds[-1] = _chi2_b
+        print(f"\nApplying chi2 bounds: {_chi2_b}\n")
         print("Later Bound are :", bounds)
     de_kwargs = dict(
         func=objective,
@@ -1143,6 +1145,12 @@ def main(signal_param_array,
                     elif not (_lo <= _de_x0[_j] <= _hi):
                         _de_x0[_j] = theta_signal[_j]
 
+                _chi2_stage1_bounds = None
+                if getattr(_cli, 'fix_chi2', False) and ndim == 8:
+                    _chi2_val = float(theta_signal[-1])
+                    _chi2_stage1_bounds = (_chi2_val - 1e-9, _chi2_val + 1e-9)
+                    print(f"[FIX-CHI2] Stage-1 chi2 fixed to {_chi2_val:.6f}; stage-2 refine will free it to [-1,1].")
+
                 result = differential_evolution_optimize(
                     theta0=_de_x0,
                     objective=bounded_objective,
@@ -1153,6 +1161,7 @@ def main(signal_param_array,
                     popsize=cfg.de_popsize,
                     callback=_de_stage1_callback,
                     workers=cfg.de_workers,
+                    chi2_bounds=_chi2_stage1_bounds,
                 )
                 best_score = -float(result.fun)
                 tracker.update(result.x, best_score)
@@ -2023,6 +2032,8 @@ if __name__ == "__main__":
                          help='Disable min_prior_widths floor so prior width is set purely by Fisher sigma × PSR. Use for warm-started searches where the start is already near the optimum.')
     _parser.add_argument('--center-on-warmstart', dest='center_on_warmstart', action='store_true',
                          help='Centre DE bounds on the warm-start (theta0) instead of the true signal. Use with --no-prior-floor for MLE warm-started searches.')
+    _parser.add_argument('--fix-chi2', dest='fix_chi2', action='store_true',
+                         help='Fix chi2 at the signal value during stage-1 DE; stage-2 refine frees it to [-1,1]. Reduces effective stage-1 dimensionality for 1PA intrinsic_phase runs.')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()

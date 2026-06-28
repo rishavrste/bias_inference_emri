@@ -60,6 +60,7 @@ EXTRA_ARGS=""
 [ -n "$TARGET_FUNC"           ] && EXTRA_ARGS="$EXTRA_ARGS --target-func $TARGET_FUNC"
 [ -n "$USE_GLOBAL_WARMSTART"  ] && EXTRA_ARGS="$EXTRA_ARGS --use-global-warmstart"
 [ -n "$FROM_SIGNAL"           ] && EXTRA_ARGS="$EXTRA_ARGS --from-signal"
+[ -n "$FIX_CHI2"              ] && EXTRA_ARGS="$EXTRA_ARGS --fix-chi2"
 
 singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_${IDX}.err.$PBS_JOBID"
 PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
