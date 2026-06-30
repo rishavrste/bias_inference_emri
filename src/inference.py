@@ -517,11 +517,12 @@ def objective_factory(target_func: str,
         raise ValueError(f"Unknown target_func: {target_func}")
         
 
-def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, xatol: float = 1e-10, fatol: float = 1e-12):
+def nelder_mead_optimize(theta0: np.ndarray, objective, maxiter: int = 3000, xatol: float = 1e-10, fatol: float = 1e-12, bounds=None):
     res = minimize(
         objective,
         theta0,
         method='Nelder-Mead',
+        bounds=bounds,
         options={'maxiter': maxiter, 'maxfev': 15000, 'xatol': xatol, 'fatol': fatol,'adaptive': True},
     )
     return res
@@ -920,11 +921,18 @@ def main(signal_param_array,
                     score_val = objective(theta)
                     return -float(score_val)
                 print(f"Starting Nelder-Mead optimization with initial theta: {theta0}")
+                # See matching comment in the DE-pipeline stage-3 NM call: keep
+                # chi2 inside its physical [-1,1] prior during unconstrained polish.
+                _nm_top_bounds = None
+                if ndim in (6, 8):
+                    _nm_top_bounds = [(-np.inf, np.inf)] * len(theta0)
+                    _nm_top_bounds[ndim - 1] = (-1.0, 1.0)
                 result = nelder_mead_optimize(
                     theta0,
                     bounded_objective,
                     maxiter=cfg.nm_maxiter,
                     xatol=cfg.nm_xatol,
+                    bounds=_nm_top_bounds,
                     fatol=cfg.nm_fatol,
                 )
                 best_score = -float(result.fun)
@@ -1394,12 +1402,21 @@ def main(signal_param_array,
                       f"(maxiter={cfg.nm_refine_maxiter})")
                 print(f"{_ts()} {'='*55}")
                 _t_nm_refine_start = time.time()
+                # NM is otherwise unconstrained, which previously let chi2 escape
+                # its physical [-1,1] prior during polish (e.g. pt7 drifted to
+                # 1.32). chi2 sits at index ndim-1 regardless of whether phase
+                # dims were appended after it.
+                _nm_refine_bounds = None
+                if ndim in (6, 8):
+                    _nm_refine_bounds = [(-np.inf, np.inf)] * len(_de_best_r)
+                    _nm_refine_bounds[ndim - 1] = (-1.0, 1.0)
                 try:
                     nm_refine_result = nelder_mead_optimize(
                         _de_best_r,
                         _neg_obj_r,
                         maxiter=cfg.nm_refine_maxiter,
                         xatol=cfg.nm_xatol,
+                        bounds=_nm_refine_bounds,
                         fatol=cfg.nm_fatol,
                     )
                     _nm_refine_elapsed = (time.time() - _t_nm_refine_start) / 60
@@ -1939,12 +1956,19 @@ def main(signal_param_array,
                       f"(maxiter={cfg.nm_refine_maxiter})")
                 print(f"{_ts()} {'='*55}")
                 _t_nm_start = time.time()
+                # See matching comment in the DE-pipeline stage-3 NM call: keep
+                # chi2 inside its physical [-1,1] prior during unconstrained polish.
+                _nm_bounds = None
+                if ndim in (6, 8):
+                    _nm_bounds = [(-np.inf, np.inf)] * len(best_theta_r)
+                    _nm_bounds[ndim - 1] = (-1.0, 1.0)
                 try:
                     nm_result = nelder_mead_optimize(
                         best_theta_r,
                         neg_obj,
                         maxiter=cfg.nm_refine_maxiter,
                         xatol=cfg.nm_xatol,
+                        bounds=_nm_bounds,
                         fatol=cfg.nm_fatol,
                     )
                     _nm_elapsed = (time.time() - _t_nm_start) / 60
