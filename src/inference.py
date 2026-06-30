@@ -900,6 +900,15 @@ def main(signal_param_array,
         tracker._best_score = float('-inf')
         
     objective = tracked_objective
+    if getattr(_cli, 'fix_chi2', False) and ndim == 8:
+        _chi2_fixed_val = float(ctx['chi2'])
+        _unfrozen_objective = objective
+        def objective(theta: np.ndarray) -> float:
+            theta = np.asarray(theta, dtype=float).copy()
+            theta[-1] = _chi2_fixed_val
+            return _unfrozen_objective(theta)
+        print(f"[FIX-CHI2] chi2 frozen at {_chi2_fixed_val:.6f} for ALL stages (1, 2, 3) "
+              f"— stage-1 DE bounds additionally pin it; stage-2/3 are now also clamped via the objective.")
     result = None
     if optimizer == 'nelder-mead':
             _nm_best_overlap = float(initial_overlap)
@@ -1237,6 +1246,11 @@ def main(signal_param_array,
                     case _:
                         print(f"Optimized parameters: {result.x}")
 
+                if getattr(_cli, 'fix_chi2', False) and ndim == 8:
+                    # The objective ignores theta[-1] when chi2 is frozen, so the
+                    # optimizer's chi2 dimension is degenerate and result.x[-1] is
+                    # meaningless noise — force it back to the fixed value.
+                    result_array['chi2'] = _chi2_fixed_val
 
                 add_kwargs['chi2']=result_array['chi2']
 
@@ -1412,6 +1426,8 @@ def main(signal_param_array,
                         print(f"[REFINE] Best phases: Phi_phi0={result_array['Phi_phi0']:.6f}  "
                               f"Phi_r0={result_array['Phi_r0']:.6f}  "
                               f"(signal: {ctx['Phi_phi0']:.6f}, {ctx['Phi_r0']:.6f})")
+                    if getattr(_cli, 'fix_chi2', False) and ndim == 8:
+                        result_array['chi2'] = _chi2_fixed_val
                     add_kwargs['chi2'] = result_array['chi2']
                     final_overlap_refined = calculate_detection_overlap(
                         result_array['m1'], result_array['m2'], result_array['a'],
@@ -1454,6 +1470,8 @@ def main(signal_param_array,
                 elif parameter_selected == 'intrinsic_phase':
                     result_array['Phi_phi0'] = float(_de_best_r[5]) % (2 * np.pi)
                     result_array['Phi_r0']   = float(_de_best_r[6]) % (2 * np.pi)
+                if getattr(_cli, 'fix_chi2', False) and ndim == 8:
+                    result_array['chi2'] = _chi2_fixed_val
 
             except Exception as exc:
                 import traceback
