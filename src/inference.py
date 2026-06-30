@@ -2080,7 +2080,7 @@ if __name__ == "__main__":
     _parser.add_argument('--center-on-warmstart', dest='center_on_warmstart', action='store_true',
                          help='Centre DE bounds on the warm-start (theta0) instead of the true signal. Use with --no-prior-floor for MLE warm-started searches.')
     _parser.add_argument('--fix-chi2', dest='fix_chi2', action='store_true',
-                         help='Fix chi2 at the signal value during stage-1 DE; stage-2 refine frees it to [-1,1]. Reduces effective stage-1 dimensionality for 1PA intrinsic_phase runs.')
+                         help='Fix chi2 at the signal value through all stages (DE stage-1, DE refine stage-2, NM polish stage-3). Reduces effective dimensionality so intrinsic+phase params converge without chi2 compensating. Only implemented for parameter_selected=intrinsic_phase (ndim=8); no effect otherwise.')
     _cli, _ = _parser.parse_known_args()
 
     cfg = Config()
