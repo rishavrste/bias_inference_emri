@@ -1158,7 +1158,12 @@ def main(signal_param_array,
                 if getattr(_cli, 'fix_chi2', False) and ndim == 8:
                     _chi2_val = float(theta_signal[-1])
                     _chi2_stage1_bounds = (_chi2_val - 1e-9, _chi2_val + 1e-9)
-                    print(f"[FIX-CHI2] Stage-1 chi2 fixed to {_chi2_val:.6f}; stage-2 refine will free it to [-1,1].")
+                    # x0 must lie within bounds passed to scipy DE. The warm-start's
+                    # chi2 may have drifted (e.g. from an earlier free-chi2 stage),
+                    # which would fall outside this tiny pinned range and raise
+                    # "ValueError: x0 not within bounds" — force it to match.
+                    _de_x0[-1] = _chi2_val
+                    print(f"[FIX-CHI2] Stage-1 DE bounds + x0 pinned to chi2={_chi2_val:.6f}.")
 
                 result = differential_evolution_optimize(
                     theta0=_de_x0,
