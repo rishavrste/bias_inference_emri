@@ -59,6 +59,7 @@ EXTRA_ARGS=""
 [ -n "$DE_POPSIZE"            ] && EXTRA_ARGS="$EXTRA_ARGS --de-popsize $DE_POPSIZE"
 [ -n "$TARGET_FUNC"           ] && EXTRA_ARGS="$EXTRA_ARGS --target-func $TARGET_FUNC"
 [ -n "$USE_GLOBAL_WARMSTART"  ] && EXTRA_ARGS="$EXTRA_ARGS --use-global-warmstart"
+[ -n "$CENTER_ON_WARMSTART"   ] && EXTRA_ARGS="$EXTRA_ARGS --center-on-warmstart"
 [ -n "$FROM_SIGNAL"           ] && EXTRA_ARGS="$EXTRA_ARGS --from-signal"
 [ -n "$FIX_CHI2"              ] && EXTRA_ARGS="$EXTRA_ARGS --fix-chi2"
 
