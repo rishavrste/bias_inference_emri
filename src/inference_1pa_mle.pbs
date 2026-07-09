@@ -1,10 +1,11 @@
 #!/bin/bash
 # 1PA IMRI_TAIL MLE run: maximise ln L = <h_true|h> - 0.5*<h|h>.
 # Uses log_likelihood with intrinsic_phase (Phi_phi0, Phi_r0, chi2 in theta).
-# Warm-starts from overlap-optimal base file (chi2 col patched to 0.95).
-# PSR=10 with prior floors gives wide enough bounds for DE to escape the bad
-# log_L region around the warmstart (chi2=0.95 gives poor 1PA overlap at
-# those params) while keeping the search physically valid.
+# Starts from SIGNAL parameters (--from-signal): the overlap-optimal base file
+# had unphysical chi2 (>>1) for 19/25 points, so the co-optimised intrinsic
+# params are also unreliable as a warmstart. Signal params are physically
+# meaningful; chi2 is searched over [-1,1] via special bounds regardless.
+# PSR=10 + prior floors gives wide bounds around the signal to find the 1PA MLE.
 # Submit:
 #   qsub -J 0-24 src/inference_1pa_mle.pbs
 
@@ -37,10 +38,9 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --optimizer differential_evolution \
     --parameter-selected intrinsic_phase \
     --prior-sigma-range 10 \
-    --center-on-warmstart \
-    --use-global-warmstart \
+    --from-signal \
     --target-func log_likelihood \
     --result-suffix _mle \
-    --de-maxiter 150 \
-    --de-popsize 10
+    --de-maxiter 1000 \
+    --de-popsize 15
 EOF
