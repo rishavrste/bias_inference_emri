@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import datetime
 import argparse
 from typing import Tuple, Optional
 import re
@@ -315,14 +316,18 @@ def objective_factory(target_func: str,
         }
     nchannels = ctx['waveform_true_fft'].shape[0]
     def score_optimal_snr(theta: np.ndarray) -> float:
+        # Use calculate_detection_overlap (true [0,1] normalized overlap) so the
+        # objective is bounded and PARIS temperature is correctly calibrated.
+        # calculate_detection_snr returned Re(<s|h>)/||h|| ≈ SNR ≈ 22, making
+        # PARIS too exploitative (effectively too-cold temperature).
         if with_phase == False:
             if not use_1PA:
                 m1, m2, a, p0, e0 = theta
                 add_kwargs['evolve_1PA'] = False
                 add_kwargs['evolve_2PA'] = False
-  
-                val = calculate_detection_snr(
-                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+
+                val = calculate_detection_overlap(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'],
                     ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_kwargs,
                     maximize_phase=bool(phase_max),
                     **fixed,)
@@ -331,22 +336,22 @@ def objective_factory(target_func: str,
                 add_kwargs['evolve_1PA'] = True
                 add_kwargs['evolve_2PA'] = False
                 add_kwargs['chi2'] = chi2
-                val = calculate_detection_snr(
-                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+                val = calculate_detection_overlap(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'],
                     ctx['Phi_phi0'], ctx['Phi_theta0'], ctx['Phi_r0'],add_kwargs,
                     maximize_phase=bool(phase_max),
                     **fixed,)
-            
-                
+
+
 
         else:
             if not use_1PA:
                 m1, m2, a, p0, e0,Phi_phi0,Phi_r0 = theta
                 add_kwargs['evolve_1PA'] = False
                 add_kwargs['evolve_2PA'] = False
-           
-                val = calculate_detection_snr(
-                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+
+                val = calculate_detection_overlap(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'],
                     Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,
                     maximize_phase=bool(phase_max),
                     **fixed)
@@ -355,8 +360,8 @@ def objective_factory(target_func: str,
                 add_kwargs['evolve_1PA'] = True
                 add_kwargs['evolve_2PA'] = False
                 add_kwargs['chi2'] = chi2
-                val = calculate_detection_snr(
-                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'], 
+                val = calculate_detection_overlap(
+                    m1, m2, a, p0, e0, ctx['Y0'],ctx['dist'],ctx['qS'],ctx['phiS'], ctx['qK'], ctx['phiK'],
                     Phi_phi0, ctx['Phi_theta0'], Phi_r0,add_kwargs,
                     maximize_phase=bool(phase_max),
                     **fixed,)
@@ -2290,8 +2295,8 @@ if __name__ == "__main__":
         _disk_result_array   = np.load(result_folder)
         _disk_overlap_array  = np.load(overlap_folder)
         existing_overlap = _disk_overlap_array[i]
+        result = list(result_dict.values())
         if existing_overlap == 0.0 or new_overlap > existing_overlap:
-            result = list(result_dict.values())
             _disk_result_array[i]  = result
             _disk_overlap_array[i] = new_overlap
             np.save(result_folder, _disk_result_array)
@@ -2299,6 +2304,16 @@ if __name__ == "__main__":
             print(f"[SAVE] Global result array updated for point {i}: score={new_overlap:.6f} (was {existing_overlap:.6f})")
         else:
             print(f"[SKIP] Global result array NOT updated for point {i}: score {new_overlap:.6f} <= existing {existing_overlap:.6f}")
+            # Always persist the rejected result so good parameters found in a bugged
+            # run can be recovered manually without re-running.
+            _skip_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            _rejected_npy = os.path.join(base_dir_i, f"rejected_overlap{new_overlap:.6f}_{_skip_ts}.npy")
+            _rejected_json = os.path.join(base_dir_i, f"rejected_overlap{new_overlap:.6f}_{_skip_ts}.json")
+            np.save(_rejected_npy, np.array(result, dtype=float))
+            with open(_rejected_json, "w") as _rf:
+                json.dump({"overlap": new_overlap, "existing_overlap": existing_overlap,
+                           "params": result, "param_names": list(result_dict.keys())}, _rf, indent=2)
+            print(f"[SKIP] Rejected params logged → {_rejected_json}")
 
 
 
