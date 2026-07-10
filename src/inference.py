@@ -1819,6 +1819,12 @@ def main(signal_param_array,
                             starting_point_keys = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0','chi2']
                             for i, key in enumerate(starting_point_keys):
                                 result_array[key] = best_theta[i]
+                            # When fix-chi2 is active the objective always evaluated with
+                            # _chi2_fixed_val, regardless of what the optimizer stored in
+                            # theta[-1].  Correct the stored chi2 so the overlap check below
+                            # and any future warmstart use the actual frozen value.
+                            if getattr(_cli, 'fix_chi2', False) and ndim == 8:
+                                result_array['chi2'] = _chi2_fixed_val
                             print(f"Optimized parameters as array: {result_array}")
                             np.save(os.path.join(idx_dir, f"results_paris_{id+1}_time_{timestamp}.npy"), result_array)
                             np.save(os.path.join(idx_dir, f"starting_point_{id+1}.npy"), result_array)
@@ -1991,6 +1997,10 @@ def main(signal_param_array,
                     # Unpack best point — intrinsic params first, then phases if extended
                     for i, key in enumerate(starting_point_keys):
                         result_array[key] = best_theta_r[i]
+                    # Same fix-chi2 correction as after PARIS: NM freely varied theta[-1]
+                    # but the objective always used _chi2_fixed_val.
+                    if getattr(_cli, 'fix_chi2', False) and ndim == 8:
+                        result_array['chi2'] = _chi2_fixed_val
                     if _refine_with_phase:
                         result_array['Phi_phi0'] = float(best_theta_r[5])
                         result_array['Phi_r0']   = float(best_theta_r[6])
