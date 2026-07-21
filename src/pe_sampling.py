@@ -205,7 +205,7 @@ def main():
                         help='Template PA order vs 2PA signal')
     parser.add_argument('--point', type=int, required=True,
                         help='Grid point index (0-24)')
-    parser.add_argument('--prior-sigma-range', type=float, default=5.0,
+    parser.add_argument('--prior-sigma-range', type=float, default=50.0,
                         help='Prior half-width in Fisher sigmas for intrinsic params')
     parser.add_argument('--n-seed', type=int, default=100,
                         help='Number of PARIS seeds (independent chains)')
