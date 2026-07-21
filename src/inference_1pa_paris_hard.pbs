@@ -1,0 +1,44 @@
+#!/bin/bash
+# Step 1 of 3 for hard points (6, 14, 19): PARIS global search from signal params,
+# chi2 fixed at 0.95. Finds the best overlap basin without chi2 coupling the search.
+#
+# Submit one job per point:
+#   qsub -v IDX=6  src/inference_1pa_paris_hard.pbs
+#   qsub -v IDX=14 src/inference_1pa_paris_hard.pbs
+#   qsub -v IDX=19 src/inference_1pa_paris_hard.pbs
+#
+# After all three complete, run step 2:
+#   qsub -v IDX=6  src/inference_1pa_frechi2_hard.pbs  (etc.)
+
+#PBS -P CFP03-CF-051
+#PBS -j oe
+#PBS -k oed
+#PBS -N inference_1pa_paris_hard
+#PBS -q auto
+#PBS -l select=1:ngpus=1:mem=128gb
+#PBS -l walltime=10:00:00
+
+cd $PBS_O_WORKDIR
+
+END=$((IDX + 1))
+
+LOG_DIR=/scratch/josh.mat/opt_grid/logs_inference
+mkdir -p "$LOG_DIR"
+
+image="/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif"
+module load singularity
+
+singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_1pa_paris_hard_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_1pa_paris_hard_${IDX}.err.$PBS_JOBID"
+PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
+export PYTHONUNBUFFERED=1
+cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
+\$PYTHON inference.py --start $IDX --end $END \
+    --run-type 1pa_vs_2pa \
+    --type IMRI_TAIL \
+    --optimizer paris \
+    --parameter-selected intrinsic_phase \
+    --from-signal \
+    --fix-chi2 \
+    --prior-sigma-range 15 \
+    --target-func optimal_snr
+EOF

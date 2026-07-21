@@ -1,23 +1,23 @@
 #!/bin/bash
-# 1PA IMRI_TAIL MLE run: maximise ln L = <h_true|h> - 0.5*<h|h>.
-# Uses log_likelihood with intrinsic_phase (Phi_phi0, Phi_r0, chi2 in theta).
-# Warm-starts from the fix-chi2 overlap-optimal result array (chi2=0.95 there)
-# so the MLE only needs to let chi2 float to its true optimum within tight PSR=3
-# Fisher bounds. Free chi2 -- no --fix-chi2 flag.
-# Submit:
-#   qsub -J 0-24 src/inference_1pa_mle.pbs
+# Step 3 of 3 for hard points (6, 14, 19): MLE from the free-chi2 overlap result
+# (step 2). Matches settings from inference_1pa_mle.pbs used for all other pts.
+# Chi2 free in [-1,1], bounded in both DE and NM.
+#
+# Submit AFTER inference_1pa_frechi2_hard.pbs completes for each point:
+#   qsub -v IDX=6  src/inference_1pa_mle_hard.pbs
+#   qsub -v IDX=14 src/inference_1pa_mle_hard.pbs
+#   qsub -v IDX=19 src/inference_1pa_mle_hard.pbs
 
 #PBS -P CFP03-CF-051
 #PBS -j oe
 #PBS -k oed
-#PBS -N inference_1pa_mle
+#PBS -N inference_1pa_mle_hard
 #PBS -q auto
 #PBS -l select=1:ngpus=1:mem=128gb
 #PBS -l walltime=04:00:00
 
 cd $PBS_O_WORKDIR
 
-IDX=$PBS_ARRAY_INDEX
 END=$((IDX + 1))
 
 LOG_DIR=/scratch/josh.mat/opt_grid/logs_inference
@@ -26,7 +26,7 @@ mkdir -p "$LOG_DIR"
 image="/app1/common/singularity-img/hopper/cuda/cuda_12.4.1-cudnn-devel-u22.04.sif"
 module load singularity
 
-singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_1pa_mle_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_1pa_mle_${IDX}.err.$PBS_JOBID"
+singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/inference_1pa_mle_hard_${IDX}.out.$PBS_JOBID" 2> "$LOG_DIR/inference_1pa_mle_hard_${IDX}.err.$PBS_JOBID"
 PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
 export PYTHONUNBUFFERED=1
 cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
@@ -35,9 +35,9 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --type IMRI_TAIL \
     --optimizer differential_evolution \
     --parameter-selected intrinsic_phase \
-    --prior-sigma-range 3 \
     --use-global-warmstart \
     --center-on-warmstart \
+    --prior-sigma-range 3 \
     --target-func log_likelihood \
     --result-suffix _mle \
     --de-maxiter 300 \

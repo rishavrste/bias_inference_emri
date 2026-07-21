@@ -1,24 +1,24 @@
 #!/bin/bash
-# 1PA IMRI_TAIL MLE run: maximise ln L = <h_true|h> - 0.5*<h|h>.
-# Uses log_likelihood with intrinsic_phase (Phi_phi0, Phi_r0, chi2 in theta).
-# Warm-starts from the fix-chi2 overlap-optimal result array (chi2=0.95 there)
-# so the MLE only needs to let chi2 float to its true optimum within tight PSR=3
-# Fisher bounds. Free chi2 -- no --fix-chi2 flag.
-# Submit:
-#   qsub -J 0-24 src/inference_1pa_mle.pbs
+# MLE re-run for pt6 only, warm-starting from the global overlap-optimal result
+# (overlap=0.9468, chi2=0.95 after free-chi2 run 529997). Chi2 is free in [-1,1]
+# in both DE and NM (bounds enforced by inference.py). Matches the settings used
+# for all other 24 pts in inference_1pa_mle.pbs.
+#
+# Submit after the free-chi2 overlap run completes:
+#   qsub src/inference_1pa_mle_pt6.pbs
 
 #PBS -P CFP03-CF-051
 #PBS -j oe
 #PBS -k oed
-#PBS -N inference_1pa_mle
+#PBS -N inference_1pa_mle_pt6
 #PBS -q auto
 #PBS -l select=1:ngpus=1:mem=128gb
 #PBS -l walltime=04:00:00
 
 cd $PBS_O_WORKDIR
 
-IDX=$PBS_ARRAY_INDEX
-END=$((IDX + 1))
+IDX=6
+END=7
 
 LOG_DIR=/scratch/josh.mat/opt_grid/logs_inference
 mkdir -p "$LOG_DIR"
@@ -35,9 +35,9 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --type IMRI_TAIL \
     --optimizer differential_evolution \
     --parameter-selected intrinsic_phase \
-    --prior-sigma-range 3 \
     --use-global-warmstart \
     --center-on-warmstart \
+    --prior-sigma-range 3 \
     --target-func log_likelihood \
     --result-suffix _mle \
     --de-maxiter 300 \
