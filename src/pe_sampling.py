@@ -15,11 +15,11 @@ Parameter space (1PA, ndim=13):
 Phi_theta0 and Y0 (xI0) are fixed at their signal values throughout.
 
 Prior:
-  - Intrinsic (m1..e0): Fisher sigma × PSR centred on signal
+  - Intrinsic (m1..e0): Fisher sigma × PSR centred on MLE (Fisher at MLE, template PA)
   - Phases (Phi_phi0, Phi_r0): [0, 2π]
-  - chi2 (1PA only): [-1, 1]
-  - dist: signal ± (PSR/SNR) × signal
-  - Sky angles (qS, phiS, qK, phiK): signal ± 0.5 rad
+  - chi2 (1PA only): Fisher sigma × PSR centred on MLE chi2, clipped to [-1, 1]
+  - dist: MLE dist ± (PSR/SNR) × MLE dist
+  - Sky angles (qS, phiS, qK, phiK): MLE ± 0.5 rad
 
 Usage:
   python pe_sampling.py --type IMRI_TAIL --run-type 1pa_vs_2pa --point 0
@@ -32,8 +32,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from misc import calculate_log_likelihood
-from inference import prepare_true_waveform
+from misc import calculate_log_likelihood, compute_fisher_parallelotope
+from inference import prepare_true_waveform, build_waveform_response
 
 from parismc import Sampler, SamplerConfig
 
@@ -96,30 +96,67 @@ def _prior_transform(u: np.ndarray) -> np.ndarray:
     return _PE_BOUNDS_LO + u * _PE_SPAN
 
 
-def _load_fisher_sigma(cache_dir: str, point: int, is_1pa: bool, snr: float) -> np.ndarray:
-    """Return Fisher 1σ widths [m1, m2, a, p0, e0 (, chi2)] at given SNR."""
-    tag = 'm1_m2_a_p0_e0_chi2' if is_1pa else 'm1_m2_a_p0_e0'
-    path = os.path.join(cache_dir, f'fisher_{point:04d}_2pa_{tag}.npy')
-    if not os.path.exists(path):
-        raise FileNotFoundError(f'Fisher cache not found: {path}')
-    d = np.load(path, allow_pickle=True).item()
+def _get_mle_fisher_sigma(mle_row: np.ndarray, point: int, is_1pa: bool,
+                           type_name: str, snr: float, use_gpu: bool = True) -> np.ndarray:
+    """Compute (or load cached) Fisher 1σ widths at the MLE point, template PA order.
+
+    Cache lives in data/fisher_cache/{type_name}_mle/ to avoid collision with the
+    signal-point 2PA Fisher cache used by the optimiser.
+    """
+    pa_tag = '1pa' if is_1pa else '0pa'
+    params_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2'] if is_1pa else ['m1', 'm2', 'a', 'p0', 'e0']
+    params_tag = '_'.join(params_to_infer)
+
+    repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    cache_dir = os.path.join(repo_root, 'data', 'fisher_cache', f'{type_name}_mle')
+    cache_path = os.path.join(cache_dir, f'fisher_{point:04d}_{pa_tag}_{params_tag}.npy')
+
+    if not os.path.exists(cache_path):
+        print(f'[MLE FISHER] Cache miss — computing at MLE pt{point} ({pa_tag})...')
+        T   = float(mle_row[_COL['T']])
+        dt  = float(mle_row[_COL['dt']])
+        chi2 = float(mle_row[_COL['chi2']]) if is_1pa else 0.0
+        ctx = {
+            'waveform_response': build_waveform_response(T=T, dt=dt, use_gpu=use_gpu),
+            'waveform_true_fft': np.zeros((2, 1)),  # shape[0] = nchannels = 2
+            'T': T, 'dt': dt, 'chi2': chi2,
+        }
+        add_kw = {
+            'chi2': chi2,
+            'evolve_1PA': is_1pa,
+            'evolve_primary': False,
+            'evolve_2PA': False,
+        }
+        compute_fisher_parallelotope(
+            ctx=ctx,
+            fisher_params=mle_row[:14],
+            params_to_infer=params_to_infer,
+            additional_kwargs=add_kw,
+            use_gpu=use_gpu,
+            _TARGET_SNR=1.0,
+            prior_sigma_range=5.0,
+            using_evec=False,
+            cache_dir=cache_dir,
+            cache_index=point,
+        )
+
+    d = np.load(cache_path, allow_pickle=True).item()
     F = np.asarray(d['F'], dtype=float)
     snr_model = float(d['snr_model'])
     scale = (snr / max(snr_model, 1e-30)) ** 2
-    Finv = np.linalg.inv(F * scale)
-    return np.sqrt(np.diag(Finv))
+    return np.sqrt(np.diag(np.linalg.inv(F * scale)))
 
 
-def _build_bounds(signal_row: np.ndarray, sigma_intr: np.ndarray, snr: float,
+def _build_bounds(mle_row: np.ndarray, sigma_intr: np.ndarray, snr: float,
                   psr: float, param_names: list) -> tuple:
-    """Return (bounds_lo, bounds_hi) arrays in theta space."""
+    """Return (bounds_lo, bounds_hi) arrays centred on the MLE point."""
     lo, hi = {}, {}
 
-    # Intrinsic: Fisher ± PSR centred on signal
+    # Intrinsic: Fisher ± PSR centred on MLE
     for i, p in enumerate(['m1', 'm2', 'a', 'p0', 'e0']):
         c = _COL[p]
-        lo[p] = signal_row[c] - psr * sigma_intr[i]
-        hi[p] = signal_row[c] + psr * sigma_intr[i]
+        lo[p] = mle_row[c] - psr * sigma_intr[i]
+        hi[p] = mle_row[c] + psr * sigma_intr[i]
     lo['a']  = max(lo['a'],  -0.99); hi['a']  = min(hi['a'],  0.99)
     lo['p0'] = max(lo['p0'],  1.0)
     lo['e0'] = max(lo['e0'],  1e-4); hi['e0'] = min(hi['e0'], 0.9)
@@ -128,24 +165,26 @@ def _build_bounds(signal_row: np.ndarray, sigma_intr: np.ndarray, snr: float,
     lo['Phi_phi0'] = 0.0; hi['Phi_phi0'] = 2.0 * np.pi
     lo['Phi_r0']   = 0.0; hi['Phi_r0']   = 2.0 * np.pi
 
-    # chi2 (1PA only): hard physical limits; chi2 is typically poorly constrained
+    # chi2 (1PA only): Fisher ± PSR centred on MLE chi2, clipped to physical limits
     if 'chi2' in param_names:
-        lo['chi2'] = -1.0
-        hi['chi2'] =  1.0
+        chi2_mle = float(mle_row[_COL['chi2']])
+        sigma_chi2 = sigma_intr[5]
+        lo['chi2'] = max(chi2_mle - psr * sigma_chi2, -1.0)
+        hi['chi2'] = min(chi2_mle + psr * sigma_chi2,  1.0)
 
-    # Distance: PSR × (dist/SNR) about the signal distance
-    d_sig = signal_row[_COL['dist']]
-    sigma_dist = d_sig / snr
-    lo['dist'] = max(d_sig - psr * sigma_dist, 1e-3)
-    hi['dist'] = d_sig + psr * sigma_dist
+    # Distance: PSR × (dist/SNR) centred on MLE distance
+    d_mle = float(mle_row[_COL['dist']])
+    sigma_dist = d_mle / snr
+    lo['dist'] = max(d_mle - psr * sigma_dist, 1e-3)
+    hi['dist'] = d_mle + psr * sigma_dist
 
-    # Sky angles: generous ±0.5 rad window around signal
+    # Sky angles: generous ±0.5 rad window centred on MLE
     for p in ['qS', 'qK']:
-        v = signal_row[_COL[p]]
+        v = float(mle_row[_COL[p]])
         lo[p] = max(v - 0.5, 0.0)
         hi[p] = min(v + 0.5, np.pi)
     for p in ['phiS', 'phiK']:
-        v = signal_row[_COL[p]]
+        v = float(mle_row[_COL[p]])
         lo[p] = v - 0.5
         hi[p] = v + 0.5
 
@@ -185,7 +224,6 @@ def main():
 
     repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
     data_dir = os.path.join(repo_root, 'data')
-    fisher_cache_dir = os.path.join(data_dir, 'fisher_cache', args.type)
 
     if args.savepath is None:
         args.savepath = os.path.join(
@@ -248,15 +286,15 @@ def main():
         'use_gpu':            True,
     }
 
-    # Fisher sigmas for intrinsic params from precomputed cache
-    print('Loading Fisher matrix from cache...')
-    sigma_intr = _load_fisher_sigma(fisher_cache_dir, args.point, is_1pa, snr)
+    # Fisher sigmas at MLE point, using template PA order
+    print('Computing/loading Fisher at MLE point...')
+    sigma_intr = _get_mle_fisher_sigma(mle_row, args.point, is_1pa, args.type, snr)
     param_labels = ['m1', 'm2', 'a', 'p0', 'e0'] + (['chi2'] if is_1pa else [])
     print(f'Fisher sigma: {dict(zip(param_labels, sigma_intr))}')
 
-    # Prior bounds
+    # Prior bounds centred on MLE
     bounds_lo, bounds_hi = _build_bounds(
-        signal_row, sigma_intr, snr, args.prior_sigma_range, param_names
+        mle_row, sigma_intr, snr, args.prior_sigma_range, param_names
     )
     print('\nPrior bounds:')
     for i, p in enumerate(param_names):
