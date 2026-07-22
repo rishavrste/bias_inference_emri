@@ -16,7 +16,7 @@ Fixed throughout: Phi_theta0, Y0 (xI0), qS, phiS, qK, phiK (all at injected sign
 
 Prior:
   - Intrinsic (m1..e0): Fisher sigma × PSR centred on MLE (Fisher at MLE, template PA)
-  - Phases (Phi_phi0, Phi_r0): [mle_phase − 2π, mle_phase + 2π] (±2 full periods centred on MLE)
+  - Phases (Phi_phi0, Phi_r0): Fisher sigma × PSR centred on MLE (no physical clipping)
   - chi2 (1PA only): Fisher sigma × PSR centred on MLE chi2, clipped to [-1, 1]
   - dist: MLE dist ± (PSR/SNR) × MLE dist
 
@@ -173,14 +173,12 @@ def _build_bounds(mle_row: np.ndarray, sigma_dict: dict, snr: float,
     lo['p0'] = max(lo['p0'],  1.0)
     lo['e0'] = max(lo['e0'],  1e-4); hi['e0'] = min(hi['e0'], 0.9)
 
-    # Phases: ±2π centred on the MLE (two full periods on each side).
-    # Wider than the minimum one-period [mle±π] to avoid cutting off any
-    # posterior mass if the sampler explores away from the MLE phase.
-    # The waveform generator handles arbitrary real-valued phases.
+    # Phases: Fisher sigma × PSR centred on MLE, same as intrinsic params.
+    # No physical clipping — the waveform accepts arbitrary real-valued phases.
     for p in ['Phi_phi0', 'Phi_r0']:
         c = _COL[p]
-        lo[p] = mle_row[c] - 2.0 * np.pi
-        hi[p] = mle_row[c] + 2.0 * np.pi
+        lo[p] = mle_row[c] - psr * sigma_dict[p]
+        hi[p] = mle_row[c] + psr * sigma_dict[p]
 
     # chi2 (1PA only): Fisher ± PSR centred on MLE chi2, clipped to physical limits
     if 'chi2' in param_names:
