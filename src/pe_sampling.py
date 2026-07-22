@@ -6,20 +6,19 @@ Runs 6 combinations: EMRI/IMRI/IMRI_TAIL × 0PA/1PA.
 Samples the template log-likelihood around the MLE point found by inference.py
 and compares the resulting posterior to the Fisher-matrix prediction.
 
-Parameter space (0PA, ndim=12):
-  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0, dist, qS, phiS, qK, phiK]
+Parameter space (0PA, ndim=8):
+  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0, dist]
 
-Parameter space (1PA, ndim=13):
-  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2, dist, qS, phiS, qK, phiK]
+Parameter space (1PA, ndim=9):
+  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2, dist]
 
-Phi_theta0 and Y0 (xI0) are fixed at their signal values throughout.
+Fixed throughout: Phi_theta0, Y0 (xI0), qS, phiS, qK, phiK (all at injected signal values).
 
 Prior:
   - Intrinsic (m1..e0): Fisher sigma × PSR centred on MLE (Fisher at MLE, template PA)
-  - Phases (Phi_phi0, Phi_r0): [mle_phase − π, mle_phase + π] (full circle centred on MLE)
+  - Phases (Phi_phi0, Phi_r0): [mle_phase − 2π, mle_phase + 2π] (±2 full periods centred on MLE)
   - chi2 (1PA only): Fisher sigma × PSR centred on MLE chi2, clipped to [-1, 1]
   - dist: MLE dist ± (PSR/SNR) × MLE dist
-  - Sky angles (qS, phiS, qK, phiK): MLE ± 0.5 rad
 
 Usage:
   python pe_sampling.py --type IMRI_TAIL --run-type 1pa_vs_2pa --point 0
@@ -45,11 +44,9 @@ _COL = {
     'dt': 14, 'T': 15, 'chi2': 16,
 }
 
-# PE parameter ordering (chi2 appears only for 1PA)
-_PARAMS_0PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0',
-               'dist', 'qS', 'phiS', 'qK', 'phiK']
-_PARAMS_1PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'chi2',
-               'dist', 'qS', 'phiS', 'qK', 'phiK']
+# PE parameter ordering (chi2 appears only for 1PA; sky angles are fixed)
+_PARAMS_0PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'dist']
+_PARAMS_1PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'chi2', 'dist']
 
 # ---------------------------------------------------------------------------
 # Module-level globals — set by main() so that _log_density and
@@ -59,6 +56,10 @@ _PARAMS_1PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'chi2',
 _PE_IS_1PA: bool = False
 _PE_Y0: float = 1.0
 _PE_PHI_THETA0: float = 0.0
+_PE_QS: float = 0.0
+_PE_PHI_S: float = 0.0
+_PE_QK: float = 0.0
+_PE_PHI_K: float = 0.0
 _PE_TMPL_EVOLVE: dict = {}
 _PE_FIXED: dict = {}
 _PE_BOUNDS_LO: np.ndarray = None
@@ -73,14 +74,15 @@ def _log_density(theta_batch: np.ndarray) -> np.ndarray:
     for k, theta in enumerate(theta_batch):
         m1, m2, a, p0, e0, Phi_phi0, Phi_r0 = theta[:7]
         if _PE_IS_1PA:
-            chi2_val, dist, qS, phiS, qK, phiK = theta[7:]
+            chi2_val, dist = theta[7], theta[8]
         else:
-            dist, qS, phiS, qK, phiK = theta[7:]
+            dist = theta[7]
             chi2_val = 0.0
         ak = {'chi2': chi2_val, **_PE_TMPL_EVOLVE}
         try:
             ll = calculate_log_likelihood(
-                m1, m2, a, p0, e0, _PE_Y0, dist, qS, phiS, qK, phiK,
+                m1, m2, a, p0, e0, _PE_Y0, dist,
+                _PE_QS, _PE_PHI_S, _PE_QK, _PE_PHI_K,
                 Phi_phi0, _PE_PHI_THETA0, Phi_r0, ak,
                 **_PE_FIXED,
             )
@@ -97,7 +99,7 @@ def _prior_transform(u: np.ndarray) -> np.ndarray:
 
 
 def _get_mle_fisher_sigma(mle_row: np.ndarray, point: int, is_1pa: bool,
-                           type_name: str, snr: float,
+                           type_name: str, snr: float = 20.0,
                            use_gpu: bool = True) -> tuple:
     """Compute (or load cached) Fisher 1σ widths at the MLE point, template PA order.
 
@@ -171,14 +173,14 @@ def _build_bounds(mle_row: np.ndarray, sigma_dict: dict, snr: float,
     lo['p0'] = max(lo['p0'],  1.0)
     lo['e0'] = max(lo['e0'],  1e-4); hi['e0'] = min(hi['e0'], 0.9)
 
-    # Phases: exactly one full 2π period centred on the MLE.
-    # PSR×sigma always exceeds π for our configurations, so the Fisher-guided
-    # window would be wider than 2π. Using [mle−π, mle+π] gives the same prior
-    # volume as [0, 2π] while placing the MLE at mle_u = 0.5 for efficient seeding.
+    # Phases: ±2π centred on the MLE (two full periods on each side).
+    # Wider than the minimum one-period [mle±π] to avoid cutting off any
+    # posterior mass if the sampler explores away from the MLE phase.
+    # The waveform generator handles arbitrary real-valued phases.
     for p in ['Phi_phi0', 'Phi_r0']:
         c = _COL[p]
-        lo[p] = mle_row[c] - np.pi
-        hi[p] = mle_row[c] + np.pi
+        lo[p] = mle_row[c] - 2.0 * np.pi
+        hi[p] = mle_row[c] + 2.0 * np.pi
 
     # chi2 (1PA only): Fisher ± PSR centred on MLE chi2, clipped to physical limits
     if 'chi2' in param_names:
@@ -192,16 +194,6 @@ def _build_bounds(mle_row: np.ndarray, sigma_dict: dict, snr: float,
     lo['dist'] = max(d_mle - psr * sigma_dist, 1e-3)
     hi['dist'] = d_mle + psr * sigma_dist
 
-    # Sky angles: generous ±0.5 rad window centred on MLE
-    for p in ['qS', 'qK']:
-        v = float(mle_row[_COL[p]])
-        lo[p] = max(v - 0.5, 0.0)
-        hi[p] = min(v + 0.5, np.pi)
-    for p in ['phiS', 'phiK']:
-        v = float(mle_row[_COL[p]])
-        lo[p] = v - 0.5
-        hi[p] = v + 0.5
-
     lo_arr = np.array([lo[p] for p in param_names])
     hi_arr = np.array([hi[p] for p in param_names])
     return lo_arr, hi_arr
@@ -209,6 +201,7 @@ def _build_bounds(mle_row: np.ndarray, sigma_dict: dict, snr: float,
 
 def main():
     global _PE_IS_1PA, _PE_Y0, _PE_PHI_THETA0, _PE_TMPL_EVOLVE
+    global _PE_QS, _PE_PHI_S, _PE_QK, _PE_PHI_K
     global _PE_FIXED, _PE_BOUNDS_LO, _PE_SPAN
 
     parser = argparse.ArgumentParser(description='PE posterior sampling at MLE point')
@@ -261,6 +254,10 @@ def main():
     # Fixed signal quantities (never sampled)
     Y0_sig         = float(signal_row[_COL['Y0']])
     Phi_theta0_sig = float(signal_row[_COL['Phi_theta0']])
+    qS_sig         = float(signal_row[_COL['qS']])
+    phiS_sig       = float(signal_row[_COL['phiS']])
+    qK_sig         = float(signal_row[_COL['qK']])
+    phiK_sig       = float(signal_row[_COL['phiK']])
     dt_sig         = float(signal_row[_COL['dt']])
     T_sig          = float(signal_row[_COL['T']])
     chi2_sig       = float(signal_row[_COL['chi2']])
@@ -326,6 +323,10 @@ def main():
     _PE_IS_1PA     = is_1pa
     _PE_Y0         = Y0_sig
     _PE_PHI_THETA0 = Phi_theta0_sig
+    _PE_QS         = qS_sig
+    _PE_PHI_S      = phiS_sig
+    _PE_QK         = qK_sig
+    _PE_PHI_K      = phiK_sig
     _PE_TMPL_EVOLVE = tmpl_evolve
     _PE_FIXED      = fixed
     _PE_BOUNDS_LO  = bounds_lo
