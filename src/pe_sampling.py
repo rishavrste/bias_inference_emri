@@ -6,19 +6,18 @@ Runs 6 combinations: EMRI/IMRI/IMRI_TAIL × 0PA/1PA.
 Samples the template log-likelihood around the MLE point found by inference.py
 and compares the resulting posterior to the Fisher-matrix prediction.
 
-Parameter space (0PA, ndim=8):
-  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0, dist]
+Parameter space (0PA, ndim=7):
+  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0]
 
-Parameter space (1PA, ndim=9):
-  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2, dist]
+Parameter space (1PA, ndim=8):
+  [m1, m2, a, p0, e0, Phi_phi0, Phi_r0, chi2]
 
-Fixed throughout: Phi_theta0, Y0 (xI0), qS, phiS, qK, phiK (all at injected signal values).
+Fixed throughout: dist, Phi_theta0, Y0 (xI0), qS, phiS, qK, phiK (all at injected signal values).
 
 Prior:
   - Intrinsic (m1..e0): Fisher sigma × PSR centred on MLE (Fisher at MLE, template PA)
   - Phases (Phi_phi0, Phi_r0): Fisher sigma × PSR centred on MLE (no physical clipping)
   - chi2 (1PA only): Fisher sigma × PSR centred on MLE chi2, clipped to [-1, 1]
-  - dist: MLE dist ± (PSR/SNR) × MLE dist
 
 Usage:
   python pe_sampling.py --type IMRI_TAIL --run-type 1pa_vs_2pa --point 0
@@ -44,9 +43,9 @@ _COL = {
     'dt': 14, 'T': 15, 'chi2': 16,
 }
 
-# PE parameter ordering (chi2 appears only for 1PA; sky angles are fixed)
-_PARAMS_0PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'dist']
-_PARAMS_1PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'chi2', 'dist']
+# PE parameter ordering (chi2 appears only for 1PA; dist and sky angles are fixed)
+_PARAMS_0PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0']
+_PARAMS_1PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'chi2']
 
 # ---------------------------------------------------------------------------
 # Module-level globals — set by main() so that _log_density and
@@ -56,6 +55,7 @@ _PARAMS_1PA = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0', 'chi2', 'dist'
 _PE_IS_1PA: bool = False
 _PE_Y0: float = 1.0
 _PE_PHI_THETA0: float = 0.0
+_PE_DIST: float = 1.0
 _PE_QS: float = 0.0
 _PE_PHI_S: float = 0.0
 _PE_QK: float = 0.0
@@ -73,15 +73,11 @@ def _log_density(theta_batch: np.ndarray) -> np.ndarray:
     results = np.full(len(theta_batch), -np.inf)
     for k, theta in enumerate(theta_batch):
         m1, m2, a, p0, e0, Phi_phi0, Phi_r0 = theta[:7]
-        if _PE_IS_1PA:
-            chi2_val, dist = theta[7], theta[8]
-        else:
-            dist = theta[7]
-            chi2_val = 0.0
+        chi2_val = theta[7] if _PE_IS_1PA else 0.0
         ak = {'chi2': chi2_val, **_PE_TMPL_EVOLVE}
         try:
             ll = calculate_log_likelihood(
-                m1, m2, a, p0, e0, _PE_Y0, dist,
+                m1, m2, a, p0, e0, _PE_Y0, _PE_DIST,
                 _PE_QS, _PE_PHI_S, _PE_QK, _PE_PHI_K,
                 Phi_phi0, _PE_PHI_THETA0, Phi_r0, ak,
                 **_PE_FIXED,
@@ -186,19 +182,13 @@ def _build_bounds(mle_row: np.ndarray, sigma_dict: dict, snr: float,
         lo['chi2'] = max(chi2_mle - psr * sigma_dict['chi2'], -1.0)
         hi['chi2'] = min(chi2_mle + psr * sigma_dict['chi2'],  1.0)
 
-    # Distance: PSR × (dist/SNR) centred on MLE distance
-    d_mle = float(mle_row[_COL['dist']])
-    sigma_dist = d_mle / snr
-    lo['dist'] = max(d_mle - psr * sigma_dist, 1e-3)
-    hi['dist'] = d_mle + psr * sigma_dist
-
     lo_arr = np.array([lo[p] for p in param_names])
     hi_arr = np.array([hi[p] for p in param_names])
     return lo_arr, hi_arr
 
 
 def main():
-    global _PE_IS_1PA, _PE_Y0, _PE_PHI_THETA0, _PE_TMPL_EVOLVE
+    global _PE_IS_1PA, _PE_Y0, _PE_PHI_THETA0, _PE_DIST, _PE_TMPL_EVOLVE
     global _PE_QS, _PE_PHI_S, _PE_QK, _PE_PHI_K
     global _PE_FIXED, _PE_BOUNDS_LO, _PE_SPAN
 
@@ -252,6 +242,7 @@ def main():
     # Fixed signal quantities (never sampled)
     Y0_sig         = float(signal_row[_COL['Y0']])
     Phi_theta0_sig = float(signal_row[_COL['Phi_theta0']])
+    dist_sig       = float(signal_row[_COL['dist']])
     qS_sig         = float(signal_row[_COL['qS']])
     phiS_sig       = float(signal_row[_COL['phiS']])
     qK_sig         = float(signal_row[_COL['qK']])
@@ -321,6 +312,7 @@ def main():
     _PE_IS_1PA     = is_1pa
     _PE_Y0         = Y0_sig
     _PE_PHI_THETA0 = Phi_theta0_sig
+    _PE_DIST       = dist_sig
     _PE_QS         = qS_sig
     _PE_PHI_S      = phiS_sig
     _PE_QK         = qK_sig
