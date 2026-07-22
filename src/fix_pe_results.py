@@ -85,6 +85,12 @@ for run in RUNS:
     signal_theta = orig['signal_theta']
     mle_theta    = orig['mle_theta']
     sigma_fisher = orig['sigma_fisher']
+    # fisher_params was added in a later run; fall back to intrinsic+chi2 for old npz files
+    if 'fisher_params' in orig:
+        fisher_params = orig['fisher_params']
+    else:
+        fisher_params = np.array([p for p in ['m1','m2','a','p0','e0','chi2']
+                                   if p in list(param_names)])
 
     np.savez(
         npz_path,
@@ -94,6 +100,7 @@ for run in RUNS:
         weighted_mean=weighted_mean,
         weighted_cov=weighted_cov,
         param_names=param_names,
+        fisher_params=fisher_params,
         signal_theta=signal_theta,
         mle_theta=mle_theta,
         sigma_fisher=sigma_fisher,
@@ -102,14 +109,13 @@ for run in RUNS:
         ess=ess,
     )
 
-    param_labels = [p for p in ['m1','m2','a','p0','e0','chi2'] if p in list(param_names)]
     print(f'  n_samples={len(samples)}  ESS={ess:.1f}')
     print(f'  Fisher vs PE marginal sigmas:')
-    for j, p in enumerate(param_labels):
+    for j, p in enumerate(fisher_params):
         idx = list(param_names).index(p)
         pe_sig   = float(np.sqrt(weighted_cov[idx, idx]))
         fish_sig = float(sigma_fisher[j])
-        print(f'    {p:6s}: Fisher={fish_sig:.4g}  PE={pe_sig:.4g}  ratio={pe_sig/max(fish_sig,1e-30):.3f}')
+        print(f'    {p:10s}: Fisher={fish_sig:.4g}  PE={pe_sig:.4g}  ratio={pe_sig/max(fish_sig,1e-30):.3f}')
 
     print(f'  Saved to {npz_path}')
 

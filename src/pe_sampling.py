@@ -16,7 +16,7 @@ Phi_theta0 and Y0 (xI0) are fixed at their signal values throughout.
 
 Prior:
   - Intrinsic (m1..e0): Fisher sigma × PSR centred on MLE (Fisher at MLE, template PA)
-  - Phases (Phi_phi0, Phi_r0): [0, 2π]
+  - Phases (Phi_phi0, Phi_r0): Fisher sigma × PSR centred on MLE phase
   - chi2 (1PA only): Fisher sigma × PSR centred on MLE chi2, clipped to [-1, 1]
   - dist: MLE dist ± (PSR/SNR) × MLE dist
   - Sky angles (qS, phiS, qK, phiK): MLE ± 0.5 rad
@@ -97,14 +97,21 @@ def _prior_transform(u: np.ndarray) -> np.ndarray:
 
 
 def _get_mle_fisher_sigma(mle_row: np.ndarray, point: int, is_1pa: bool,
-                           type_name: str, snr: float, use_gpu: bool = True) -> np.ndarray:
+                           type_name: str, snr: float,
+                           use_gpu: bool = True) -> tuple:
     """Compute (or load cached) Fisher 1σ widths at the MLE point, template PA order.
 
-    Cache lives in data/fisher_cache/{type_name}_mle/ to avoid collision with the
-    signal-point 2PA Fisher cache used by the optimiser.
+    Includes initial phases (Phi_phi0, Phi_r0) in params_to_infer so that the
+    Fisher gives guidance on phase prior widths — avoiding the flat-phase problem.
+
+    Returns (sigma_arr, params_to_infer) so the caller knows param ordering.
+    Cache lives in data/fisher_cache/{type_name}_mle/.
     """
     pa_tag = '1pa' if is_1pa else '0pa'
-    params_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2'] if is_1pa else ['m1', 'm2', 'a', 'p0', 'e0']
+    if is_1pa:
+        params_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'chi2', 'Phi_phi0', 'Phi_r0']
+    else:
+        params_to_infer = ['m1', 'm2', 'a', 'p0', 'e0', 'Phi_phi0', 'Phi_r0']
     params_tag = '_'.join(params_to_infer)
 
     repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
@@ -144,33 +151,38 @@ def _get_mle_fisher_sigma(mle_row: np.ndarray, point: int, is_1pa: bool,
     F = np.asarray(d['F'], dtype=float)
     snr_model = float(d['snr_model'])
     scale = (snr / max(snr_model, 1e-30)) ** 2
-    return np.sqrt(np.diag(np.linalg.inv(F * scale)))
+    return np.sqrt(np.diag(np.linalg.inv(F * scale))), params_to_infer
 
 
-def _build_bounds(mle_row: np.ndarray, sigma_intr: np.ndarray, snr: float,
+def _build_bounds(mle_row: np.ndarray, sigma_dict: dict, snr: float,
                   psr: float, param_names: list) -> tuple:
-    """Return (bounds_lo, bounds_hi) arrays centred on the MLE point."""
+    """Return (bounds_lo, bounds_hi) arrays centred on the MLE point.
+
+    sigma_dict maps parameter name → Fisher 1σ width (from _get_mle_fisher_sigma).
+    """
     lo, hi = {}, {}
 
     # Intrinsic: Fisher ± PSR centred on MLE
-    for i, p in enumerate(['m1', 'm2', 'a', 'p0', 'e0']):
+    for p in ['m1', 'm2', 'a', 'p0', 'e0']:
         c = _COL[p]
-        lo[p] = mle_row[c] - psr * sigma_intr[i]
-        hi[p] = mle_row[c] + psr * sigma_intr[i]
+        lo[p] = mle_row[c] - psr * sigma_dict[p]
+        hi[p] = mle_row[c] + psr * sigma_dict[p]
     lo['a']  = max(lo['a'],  -0.99); hi['a']  = min(hi['a'],  0.99)
     lo['p0'] = max(lo['p0'],  1.0)
     lo['e0'] = max(lo['e0'],  1e-4); hi['e0'] = min(hi['e0'], 0.9)
 
-    # Phases: flat over full circle
-    lo['Phi_phi0'] = 0.0; hi['Phi_phi0'] = 2.0 * np.pi
-    lo['Phi_r0']   = 0.0; hi['Phi_r0']   = 2.0 * np.pi
+    # Phases: Fisher ± PSR centred on MLE phase, clipped to physical range [0, 2π].
+    # When Fisher sigma is large (degenerate direction), this falls back to the full circle.
+    for p in ['Phi_phi0', 'Phi_r0']:
+        c = _COL[p]
+        lo[p] = max(mle_row[c] - psr * sigma_dict[p], 0.0)
+        hi[p] = min(mle_row[c] + psr * sigma_dict[p], 2.0 * np.pi)
 
     # chi2 (1PA only): Fisher ± PSR centred on MLE chi2, clipped to physical limits
     if 'chi2' in param_names:
         chi2_mle = float(mle_row[_COL['chi2']])
-        sigma_chi2 = sigma_intr[5]
-        lo['chi2'] = max(chi2_mle - psr * sigma_chi2, -1.0)
-        hi['chi2'] = min(chi2_mle + psr * sigma_chi2,  1.0)
+        lo['chi2'] = max(chi2_mle - psr * sigma_dict['chi2'], -1.0)
+        hi['chi2'] = min(chi2_mle + psr * sigma_dict['chi2'],  1.0)
 
     # Distance: PSR × (dist/SNR) centred on MLE distance
     d_mle = float(mle_row[_COL['dist']])
@@ -286,15 +298,21 @@ def main():
         'use_gpu':            True,
     }
 
-    # Fisher sigmas at MLE point, using template PA order
+    # Fisher sigmas at MLE point, using template PA order (includes phases)
     print('Computing/loading Fisher at MLE point...')
-    sigma_intr = _get_mle_fisher_sigma(mle_row, args.point, is_1pa, args.type, snr)
-    param_labels = ['m1', 'm2', 'a', 'p0', 'e0'] + (['chi2'] if is_1pa else [])
-    print(f'Fisher sigma: {dict(zip(param_labels, sigma_intr))}')
+    sigma_arr, fisher_params = _get_mle_fisher_sigma(
+        mle_row, args.point, is_1pa, args.type, snr
+    )
+    sigma_dict = dict(zip(fisher_params, sigma_arr))
+    print(f'Fisher sigma: {sigma_dict}')
+
+    # param_labels: Fisher params that are also PE params (all Fisher params are in param_names)
+    param_labels = [p for p in fisher_params if p in param_names]
+    sigma_labels = np.array([sigma_dict[p] for p in param_labels])
 
     # Prior bounds centred on MLE
     bounds_lo, bounds_hi = _build_bounds(
-        mle_row, sigma_intr, snr, args.prior_sigma_range, param_names
+        mle_row, sigma_dict, snr, args.prior_sigma_range, param_names
     )
     print('\nPrior bounds:')
     for i, p in enumerate(param_names):
@@ -340,9 +358,10 @@ def main():
         config=config,
     )
 
-    # Seed tightly around MLE in unit-hypercube space
+    # Seed around MLE in unit-hypercube space.
+    # scatter=0.01 puts seeds at ±0.5σ from MLE (prevents immediate PARIS chain collapse).
     np.random.seed(42)
-    scatter = 1e-7
+    scatter = 0.01
     seeds = mle_u + np.random.randn(args.n_seed - 1, ndim) * scatter
     seeds = np.vstack([seeds, mle_u])
     seeds = np.clip(seeds, 0.0, 1.0)
@@ -381,8 +400,8 @@ def main():
     for j, p in enumerate(param_labels):
         idx = param_names.index(p)
         pe_sig   = float(np.sqrt(weighted_cov[idx, idx]))
-        fish_sig = float(sigma_intr[j])
-        print(f'  {p:6s}: Fisher={fish_sig:.4g}  PE={pe_sig:.4g}  ratio={pe_sig/max(fish_sig,1e-30):.3f}')
+        fish_sig = float(sigma_labels[j])
+        print(f'  {p:10s}: Fisher={fish_sig:.4g}  PE={pe_sig:.4g}  ratio={pe_sig/max(fish_sig,1e-30):.3f}')
 
     signal_theta = np.array([signal_row[_COL[p]] for p in param_names])
 
@@ -394,9 +413,10 @@ def main():
         weighted_mean=weighted_mean,
         weighted_cov=weighted_cov,
         param_names=np.array(param_names),
+        fisher_params=np.array(param_labels),
         signal_theta=signal_theta,
         mle_theta=mle_theta,
-        sigma_fisher=sigma_intr,
+        sigma_fisher=sigma_labels,
         bounds_lo=bounds_lo,
         bounds_hi=bounds_hi,
         ess=ess,
