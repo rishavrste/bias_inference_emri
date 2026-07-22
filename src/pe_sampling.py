@@ -16,7 +16,7 @@ Phi_theta0 and Y0 (xI0) are fixed at their signal values throughout.
 
 Prior:
   - Intrinsic (m1..e0): Fisher sigma × PSR centred on MLE (Fisher at MLE, template PA)
-  - Phases (Phi_phi0, Phi_r0): Fisher sigma × PSR centred on MLE phase
+  - Phases (Phi_phi0, Phi_r0): [mle_phase − π, mle_phase + π] (full circle centred on MLE)
   - chi2 (1PA only): Fisher sigma × PSR centred on MLE chi2, clipped to [-1, 1]
   - dist: MLE dist ± (PSR/SNR) × MLE dist
   - Sky angles (qS, phiS, qK, phiK): MLE ± 0.5 rad
@@ -171,12 +171,14 @@ def _build_bounds(mle_row: np.ndarray, sigma_dict: dict, snr: float,
     lo['p0'] = max(lo['p0'],  1.0)
     lo['e0'] = max(lo['e0'],  1e-4); hi['e0'] = min(hi['e0'], 0.9)
 
-    # Phases: Fisher ± PSR centred on MLE phase, clipped to physical range [0, 2π].
-    # When Fisher sigma is large (degenerate direction), this falls back to the full circle.
+    # Phases: exactly one full 2π period centred on the MLE.
+    # PSR×sigma always exceeds π for our configurations, so the Fisher-guided
+    # window would be wider than 2π. Using [mle−π, mle+π] gives the same prior
+    # volume as [0, 2π] while placing the MLE at mle_u = 0.5 for efficient seeding.
     for p in ['Phi_phi0', 'Phi_r0']:
         c = _COL[p]
-        lo[p] = max(mle_row[c] - psr * sigma_dict[p], 0.0)
-        hi[p] = min(mle_row[c] + psr * sigma_dict[p], 2.0 * np.pi)
+        lo[p] = mle_row[c] - np.pi
+        hi[p] = mle_row[c] + np.pi
 
     # chi2 (1PA only): Fisher ± PSR centred on MLE chi2, clipped to physical limits
     if 'chi2' in param_names:
