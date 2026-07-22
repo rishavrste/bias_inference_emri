@@ -207,7 +207,7 @@ def main():
                         help='Grid point index (0-24)')
     parser.add_argument('--prior-sigma-range', type=float, default=50.0,
                         help='Prior half-width in Fisher sigmas for intrinsic params')
-    parser.add_argument('--n-seed', type=int, default=100,
+    parser.add_argument('--n-seed', type=int, default=20,
                         help='Number of PARIS seeds (independent chains)')
     parser.add_argument('--num-iterations', type=int, default=100_000,
                         help='Maximum PARIS iterations')
@@ -364,16 +364,18 @@ def main():
     )
 
     # Extract and save results
+    # get_samples_with_weights applies prior_transform internally — returns physical space
     print('\nExtracting results...')
-    samples_u, weights = sampler.get_samples_with_weights(flatten=True)
-    samples = _prior_transform(samples_u)
-    ess = float(1.0 / np.sum(weights ** 2))
+    samples, weights = sampler.get_samples_with_weights(flatten=True)
+    samples_unit = np.clip((samples - bounds_lo) / span, 0.0, 1.0)
+    ess = float(np.sum(weights) ** 2 / np.sum(weights ** 2))
 
     print(f'Total samples: {len(samples)}')
     print(f'Effective sample size: {ess:.1f}')
 
-    weighted_mean = np.average(samples, weights=weights, axis=0)
-    weighted_cov  = np.cov(samples.T, aweights=weights)
+    w_norm = weights / weights.sum()
+    weighted_mean = np.average(samples, weights=w_norm, axis=0)
+    weighted_cov  = np.cov(samples.T, aweights=w_norm)
 
     print('\nFisher vs PE marginal sigmas:')
     for j, p in enumerate(param_labels):
@@ -387,7 +389,7 @@ def main():
     np.savez(
         os.path.join(args.savepath, 'pe_results.npz'),
         samples=samples,
-        samples_unit=samples_u,
+        samples_unit=samples_unit,
         weights=weights,
         weighted_mean=weighted_mean,
         weighted_cov=weighted_cov,
