@@ -147,7 +147,7 @@ def paris_log_density(params):
 def build_waveform_response(T: float, dt: float, use_gpu: bool = False) -> ResponseWrapper:
     """Create a LISA ResponseWrapper consistent with existing modules."""
 
-    sum_kwargs = dict(pad_output=False, odd_len=True)
+    sum_kwargs = dict(pad_output=True, odd_len=True)
     
     waveform_model = GenerateEMRIWaveform(SuperKludgeWaveform, sum_kwargs=sum_kwargs, return_list=False,use_gpu=use_gpu)
 
