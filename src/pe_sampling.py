@@ -210,6 +210,8 @@ def main():
                         help='Stop when |ΔlogZ| < this value')
     parser.add_argument('--savepath', default=None,
                         help='Output directory (auto-generated if not set)')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from sampler_state.pkl in the savepath directory')
     args = parser.parse_args()
 
     is_1pa = (args.run_type == '1pa_vs_2pa')
@@ -328,52 +330,70 @@ def main():
     print(f'\nMLE theta: {dict(zip(param_names, mle_theta))}')
     print(f'MLE in unit hypercube: {np.round(mle_u, 4)}')
 
-    # PARIS sampler
-    config = SamplerConfig(
-        merge_confidence=0.9,
-        alpha=5000,
-        trail_size=int(1e3),
-        boundary_limiting=True,
-        use_beta=True,
-        integral_num=int(1e5),
-        gamma=500,
-        use_pool=False,
-    )
+    # PARIS sampler — fresh start or resume from checkpoint
+    if args.resume:
+        pkl_path = os.path.join(args.savepath, 'sampler_state.pkl')
+        print(f'\nResuming PARIS from {pkl_path}')
+        print(f'  (current_iter will be read from saved state)')
+        sampler = Sampler.load_state(pkl_path)
+        # Rewire log_density and prior_transform — the pkl stores references
+        # by name but the module-level globals must be live in this process.
+        sampler.log_density_func = _log_density
+        sampler.prior_transform  = _prior_transform
+        print(f'\nContinuing PARIS (max_iter={args.num_iterations}, '
+              f'stop_dlogZ={args.stop_dlogz})...')
+        sampler.run_sampling(
+            num_iterations=args.num_iterations,
+            savepath=args.savepath,
+            print_iter=100,
+            stop_dlogZ=args.stop_dlogz,
+        )
+    else:
+        config = SamplerConfig(
+            merge_confidence=0.9,
+            alpha=5000,
+            trail_size=int(1e3),
+            boundary_limiting=True,
+            use_beta=True,
+            integral_num=int(1e5),
+            gamma=500,
+            use_pool=False,
+        )
 
-    init_cov_list = [np.eye(ndim) * 1e-10] * args.n_seed
+        init_cov_list = [np.eye(ndim) * 1e-10] * args.n_seed
 
-    sampler = Sampler(
-        ndim=ndim,
-        n_seed=args.n_seed,
-        log_density_func=_log_density,
-        init_cov_list=init_cov_list,
-        prior_transform=_prior_transform,
-        config=config,
-    )
+        sampler = Sampler(
+            ndim=ndim,
+            n_seed=args.n_seed,
+            log_density_func=_log_density,
+            init_cov_list=init_cov_list,
+            prior_transform=_prior_transform,
+            config=config,
+        )
 
-    # Seed around MLE in unit-hypercube space.
-    # scatter=0.01 puts seeds at ±0.5σ from MLE (prevents immediate PARIS chain collapse).
-    np.random.seed(42)
-    scatter = 0.01
-    seeds = mle_u + np.random.randn(args.n_seed - 1, ndim) * scatter
-    seeds = np.vstack([seeds, mle_u])
-    seeds = np.clip(seeds, 0.0, 1.0)
+        # Seed around MLE in unit-hypercube space.
+        # scatter=0.01 puts seeds at ±0.5σ from MLE
+        np.random.seed(42)
+        scatter = 0.01
+        seeds = mle_u + np.random.randn(args.n_seed - 1, ndim) * scatter
+        seeds = np.vstack([seeds, mle_u])
+        seeds = np.clip(seeds, 0.0, 1.0)
 
-    print('\nEvaluating log-density at seed points...')
-    seeds_logL = _log_density(_prior_transform(seeds))
-    print(f'Seed log-L range: [{seeds_logL.min():.2f}, {seeds_logL.max():.2f}]')
-    print(f'MLE seed log-L: {seeds_logL[-1]:.4f}')
+        print('\nEvaluating log-density at seed points...')
+        seeds_logL = _log_density(_prior_transform(seeds))
+        print(f'Seed log-L range: [{seeds_logL.min():.2f}, {seeds_logL.max():.2f}]')
+        print(f'MLE seed log-L: {seeds_logL[-1]:.4f}')
 
-    print(f'\nStarting PARIS (ndim={ndim}, n_seed={args.n_seed}, '
-          f'max_iter={args.num_iterations})...')
-    sampler.run_sampling(
-        num_iterations=args.num_iterations,
-        savepath=args.savepath,
-        print_iter=100,
-        external_lhs_points=seeds,
-        external_lhs_log_densities=seeds_logL,
-        stop_dlogZ=args.stop_dlogz,
-    )
+        print(f'\nStarting PARIS (ndim={ndim}, n_seed={args.n_seed}, '
+              f'max_iter={args.num_iterations})...')
+        sampler.run_sampling(
+            num_iterations=args.num_iterations,
+            savepath=args.savepath,
+            print_iter=100,
+            external_lhs_points=seeds,
+            external_lhs_log_densities=seeds_logL,
+            stop_dlogZ=args.stop_dlogz,
+        )
 
     # Extract and save results
     # get_samples_with_weights applies prior_transform internally — returns physical space

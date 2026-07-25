@@ -26,9 +26,10 @@ TYPE=${TYPE:-IMRI_TAIL}
 RUN_TYPE=${RUN_TYPE:-1pa_vs_2pa}
 POINT=${POINT:-0}
 PSR=${PSR:-50}
-N_SEED=${N_SEED:-100}
+N_SEED=${N_SEED:-20}
 NUM_ITER=${NUM_ITER:-100000}
 STOP_DLOGZ=${STOP_DLOGZ:-0.01}
+RESUME=${RESUME:-0}
 
 LOG_DIR=/scratch/josh.mat/opt_grid/logs_pe
 mkdir -p "$LOG_DIR"
@@ -40,6 +41,8 @@ singularity exec --nv -e "$image" bash << EOF > "$LOG_DIR/pe_${TYPE}_${RUN_TYPE}
 PYTHON=/home/svu/josh.mat/miniconda3/bin/python3
 export PYTHONUNBUFFERED=1
 cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
+RESUME_FLAG=""
+if [ "$RESUME" = "1" ]; then RESUME_FLAG="--resume"; fi
 \$PYTHON pe_sampling.py \
     --type $TYPE \
     --run-type $RUN_TYPE \
@@ -47,5 +50,6 @@ cd /home/svu/josh.mat/git_repos/bias_inference_emri/src
     --prior-sigma-range $PSR \
     --n-seed $N_SEED \
     --num-iterations $NUM_ITER \
-    --stop-dlogz $STOP_DLOGZ
+    --stop-dlogz $STOP_DLOGZ \
+    $RESUME_FLAG
 EOF
